@@ -108,6 +108,8 @@ memory, with its sound through the chip.
 - A folder opens a game elsewhere, built in its own workspace.
 - It watches every game's folder: a saved file rebuilds that game, and the
   page runs the new build through the game played so far.
+- A page hidden holds the game where it was last shown, its sound eased
+  out; shown again, both run on as if never hidden.
 
 ## Headless runs
 

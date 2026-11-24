@@ -3,7 +3,9 @@
  * asked each frame to run what the game's clock has due, the keys it holds
  * the buttons by, and what the last answer showed, kept for the panels to
  * read. The clock is the emulator's, as a cabinet's is: the page only sets
- * its pace, the speed while it plays and none while it pauses.
+ * its pace, the speed while it plays and none while it pauses or the page
+ * is hidden. Hidden, the game holds as a cabinet's does when its player
+ * goes away, its sound with it, and runs on as the page shows again.
  *
  * Every update's buttons are kept from the start, so the game played so far
  * is a session (`session.ts`): saved, it plays again exactly; and a cart
@@ -53,6 +55,8 @@ export class Bench {
 	seeking = $state<number | null>(null);
 
 	#playing = $state(true);
+	/** Whether the page is hidden. */
+	#away = false;
 	/** Updates a second, as a share of the console's. */
 	#speed = $state(1);
 	/** The buttons of every update run, from the start. */
@@ -86,6 +90,15 @@ export class Bench {
 		this.#ask({ pace: this.#pace() });
 	}
 
+	/** The page hidden, or shown again. */
+	set away(away: boolean) {
+		if (away === this.#away) return;
+		this.#away = away;
+		this.#ask({ pace: this.#pace() });
+		if (away) this.sound.hold();
+		else this.sound.resume();
+	}
+
 	get speed(): number {
 		return this.#speed;
 	}
@@ -101,7 +114,7 @@ export class Bench {
 	}
 
 	#pace(): number {
-		return this.#playing ? this.#speed : 0;
+		return this.#playing && !this.#away ? this.#speed : 0;
 	}
 
 	#ask(asked: Asked, transfer: Transferable[] = []) {

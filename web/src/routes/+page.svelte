@@ -177,6 +177,7 @@
 </script>
 
 <svelte:window onkeydown={down} onkeyup={up} onpointerdown={() => sound.wake()} />
+<svelte:document onvisibilitychange={() => (bench.away = document.hidden)} />
 <svelte:body
 	ondragover={(event) => event.preventDefault()}
 	ondrop={(event) => {

@@ -69,6 +69,16 @@ export class Sound {
 		if (this.on) this.#node?.port.postMessage({ tone: words });
 	}
 
+	/** Holds the stream where it is, eased out, what waits kept. */
+	hold() {
+		this.#node?.port.postMessage({ hold: true });
+	}
+
+	/** Eases the stream in from where it held. */
+	resume() {
+		this.#node?.port.postMessage({ resume: true });
+	}
+
 	/** Drops what waits and lets every channel go out. */
 	hush() {
 		this.#node?.port.postMessage({ hush: true });

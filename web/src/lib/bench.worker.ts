@@ -17,6 +17,11 @@ type Host = typeof import('../../../crates/runner/host.js');
 const ID = 1;
 /** The most updates one answer runs while the game seeks, so the page shows it going. */
 const SEEK = 600;
+/**
+ * When the clock last ran what was due: a game stopped is held there, as
+ * last shown, so no update falls due after it.
+ */
+let ticked = 0;
 
 interface Scope {
 	postMessage(message: Told, transfer?: Transferable[]): void;
@@ -108,6 +113,7 @@ async function open(emulator: Emulator, data: Extract<Asked, { open: ArrayBuffer
 	game = data.game;
 	said = 0;
 	seeking = data.seek && data.seek > 0 ? data.seek : null;
+	ticked = now;
 	emulator.open(ID, file, data.seed, now, true);
 	if (data.script) emulator.script(ID, data.script);
 	emulator.pace(ID, seeking === null ? data.pace : 0, now);
@@ -126,7 +132,7 @@ function tick(emulator: Emulator) {
 		const ran = emulator.step(ID, Math.min(SEEK, seeking - updates));
 		if (ran === 0 || updates + ran >= seeking) seeking = null;
 		post(emulator, true, true);
-	} else if (emulator.tick(performance.now()).length) {
+	} else if (emulator.tick((ticked = performance.now())).length) {
 		post(emulator, true);
 	} else {
 		scope.postMessage({ ticked: true });
@@ -136,7 +142,7 @@ function tick(emulator: Emulator) {
 function answer(emulator: Emulator, data: Asked) {
 	if ('open' in data) return open(emulator, data);
 	if ('tick' in data) tick(emulator);
-	else if ('pace' in data) emulator.pace(ID, data.pace, performance.now());
+	else if ('pace' in data) emulator.pace(ID, data.pace, data.pace === 0 ? ticked : performance.now());
 	else if ('press' in data) emulator.press(ID, data.press);
 	else if ('step' in data) {
 		if (emulator.step(ID, data.step)) post(emulator);
