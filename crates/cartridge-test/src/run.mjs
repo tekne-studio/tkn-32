@@ -2,7 +2,8 @@
 // engine running this script, node's V8, bun's JavaScriptCore or
 // SpiderMonkey's shell, by the host the emulator ships beside it. Prints
 // what the run came to as `run.rs` writes it: the same hashes over the same
-// bytes, the last screen in the colours this host draws.
+// bytes, the last screen in the colours this host draws, and what this
+// host's check says of the file.
 //   node run.mjs <emulator folder> <file> <seed> <buttons, four bytes each>
 //   js -m run.mjs -- <the same>
 
@@ -44,7 +45,9 @@ const fnv = (hash, bytes) => {
 const hex = (n) => n.toString(16).padStart(8, '0');
 
 const ID = 1;
-emulator.open(ID, read(file), Number(seed), 0);
+const cart = read(file);
+const check = emulator.check(cart);
+emulator.open(ID, cart, Number(seed), 0);
 emulator.script(ID, buttons);
 const pixels = emulator.width * emulator.height;
 let hash = 0x811c9dc5;
@@ -60,4 +63,4 @@ for (let update = 0; update < buttons.length && emulator.stop(ID) === null; upda
 	}
 }
 const rgba = fnv(0x811c9dc5, emulator.rgba(ID));
-say(`${hex(hash)} ${hex(tones)} ${emulator.stop(ID) ?? 'running'} ${emulator.updates(ID)} ${hex(rgba)}`);
+say(`${hex(hash)} ${hex(tones)} ${emulator.stop(ID) ?? 'running'} ${emulator.updates(ID)} ${hex(rgba)} check:${check}`);

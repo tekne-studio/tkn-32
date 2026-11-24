@@ -1,11 +1,12 @@
 //! What the tests of a cartridge's runner share: a cartridge written by
 //! hand, and its run on wasmi and through every host of the emulator at
-//! hand (`cartridge_test::on_every_engine`). Each test binary uses a part.
+//! hand (`cartridge_test::on_every_engine`), or its refusal by all of
+//! them. Each test binary uses a part.
 #![allow(dead_code, unused_imports)]
 
 pub use cartridge_test::{Run, emulator, fnv, on_every_engine, on_wasmi, part};
 
-use cartridge_run::Stop;
+use cartridge_run::{Refusal, Stop, prepare};
 
 /// A cartridge that keeps the contract, with `update`'s body, `more`
 /// fields in the module and `memory` pages, as WebAssembly text. Its screen
@@ -50,4 +51,18 @@ pub fn assert_runs(file: &[u8], updates: u64) {
         ("running", updates),
         "{run}"
     );
+}
+
+/// Asserts every host refuses `file` before it runs it, by its check and
+/// as it opens it, for the same reason: gives the reason.
+pub fn refused(file: &[u8]) -> Refusal {
+    let refusal = prepare(file).expect_err("the file is refused");
+    let run = on_every_engine(file, 1, &[0]);
+    let stop = Stop::Refused(refusal.clone()).to_string();
+    assert_eq!(
+        (run.check.as_str(), &run.stop, run.updates),
+        (refusal.code(), &stop, 0),
+        "{run}"
+    );
+    refusal
 }

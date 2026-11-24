@@ -2,9 +2,9 @@
 //! contract's type and nothing else, no memory, no table, no global, so it
 //! reaches nothing of the runner but a sound.
 
-use cartridge_run::{Refusal, prepare};
+use cartridge_run::Refusal;
 
-use crate::support::assert_runs;
+use crate::support::{assert_runs, refused};
 
 /// A module that keeps the contract but for its `import`.
 fn importing(import: &str) -> Vec<u8> {
@@ -39,20 +39,14 @@ fn an_import_other_than_tone_is_refused() {
             "env.sound",
         ),
     ] {
-        assert_eq!(
-            prepare(&importing(import)).unwrap_err(),
-            Refusal::Import(name.into())
-        );
+        assert_eq!(refused(&importing(import)), Refusal::Import(name.into()));
     }
 }
 
 #[test]
 fn an_imported_memory_is_refused() {
     let file = wat::parse_str(r#"(module (import "env" "memory" (memory 1)))"#).unwrap();
-    assert_eq!(
-        prepare(&file).unwrap_err(),
-        Refusal::Import("env.memory".into())
-    );
+    assert_eq!(refused(&file), Refusal::Import("env.memory".into()));
 }
 
 #[test]
@@ -65,7 +59,7 @@ fn tone_of_another_type_is_refused() {
     ] {
         let import = format!(r#"(import "env" "tone" {tone})"#);
         assert_eq!(
-            prepare(&importing(&import)).unwrap_err(),
+            refused(&importing(&import)),
             Refusal::Import("env.tone".into()),
             "{tone}"
         );

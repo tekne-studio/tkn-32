@@ -5,7 +5,7 @@
 
 use cartridge_run::{Refusal, Stop, prepare};
 
-use crate::support::{assert_runs, assert_stops, cart};
+use crate::support::{assert_runs, assert_stops, cart, refused};
 
 /// The names a prepared file exports.
 fn exported(file: &[u8]) -> Vec<String> {
@@ -84,10 +84,7 @@ fn a_missing_export_is_refused() {
     for (missing, name) in names.iter().enumerate() {
         let mut exports = full.to_vec();
         exports.remove(missing);
-        assert_eq!(
-            prepare(&only(&exports.concat())).unwrap_err(),
-            Refusal::Export(name)
-        );
+        assert_eq!(refused(&only(&exports.concat())), Refusal::Export(name));
     }
     prepare(&only(&full.concat())).expect("the whole contract");
 }
@@ -104,7 +101,7 @@ fn an_export_of_another_type_is_refused() {
         (r#"(export "cart_abi" (memory 0))"#, "cart_abi"),
     ] {
         assert_eq!(
-            prepare(&only(&format!("{cart_abi} {rest}"))).unwrap_err(),
+            refused(&only(&format!("{cart_abi} {rest}"))),
             Refusal::Export(name),
             "{cart_abi}"
         );
@@ -113,7 +110,7 @@ fn an_export_of_another_type_is_refused() {
         (export "update" (func $takes)) (export "frame" (func $gives))
         (export "palette" (func $gives)) (export "memory" (func $nothing))"#;
     assert_eq!(
-        prepare(&only(memory_as_a_function)).unwrap_err(),
+        refused(&only(memory_as_a_function)),
         Refusal::Export("memory")
     );
 }

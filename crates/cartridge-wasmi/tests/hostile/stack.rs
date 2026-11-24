@@ -4,9 +4,9 @@
 //! on every engine, so no engine's own limit comes first.
 
 use cartridge::{FRAME_OVERHEAD, MAX_FRAME, MAX_STACK};
-use cartridge_run::{Refusal, Stop, prepare};
+use cartridge_run::{Refusal, Stop};
 
-use crate::support::{assert_runs, assert_stops, cart};
+use crate::support::{assert_runs, assert_stops, cart, refused};
 
 /// `$down` calls itself `n` times, `n + 1` calls in all, each holding a
 /// frame of its parameter, `locals` i64 locals, and the two values its
@@ -98,26 +98,20 @@ fn a_tone_at_the_bottom_of_the_deepest_chain_is_heard_and_one_more_call_stops() 
 fn a_frame_over_the_limit_is_refused() {
     // Its locals, or its operand stack.
     let locals = MAX_FRAME - 2;
-    assert_eq!(
-        prepare(&chain(1, locals)).unwrap_err(),
-        Refusal::Frame(MAX_FRAME + 1)
-    );
+    assert_eq!(refused(&chain(1, locals)), Refusal::Frame(MAX_FRAME + 1));
     let pushes = MAX_FRAME as usize;
     let tall = format!(
         "{} {}",
         "(i32.const 1)".repeat(pushes),
         "(drop)".repeat(pushes)
     );
-    assert_eq!(
-        prepare(&cart(&tall, "", 1)).unwrap_err(),
-        Refusal::Frame(MAX_FRAME + 1)
-    );
+    assert_eq!(refused(&cart(&tall, "", 1)), Refusal::Frame(MAX_FRAME + 1));
 }
 
 #[test]
 fn locals_past_what_any_engine_takes_are_refused() {
     for locals in [30_000, 50_000, 100_000] {
         let file = cart("", &format!("(func (local {}))", " i32".repeat(locals)), 1);
-        assert!(prepare(&file).is_err(), "{locals} locals");
+        refused(&file);
     }
 }

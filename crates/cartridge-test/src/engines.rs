@@ -137,7 +137,7 @@ pub fn part(folder: &Path, part: &str) -> PathBuf {
 
 /// `file` run on wasmi and through every host at hand, which must agree to
 /// the frame: the same frames, the same tones, the same stop at the same
-/// update. Gives what they agree on.
+/// update, and the same verdict of their check. Gives what they agree on.
 pub fn on_every_engine(file: &[u8], seed: u32, buttons: &[u32]) -> Run {
     let wasmi = on_wasmi(file, seed, buttons);
     let emulator = emulator();
@@ -206,8 +206,14 @@ pub fn on_every_engine(file: &[u8], seed: u32, buttons: &[u32]) -> Run {
 /// Keeps a case every host agreed on in `folder`, a file each, for the
 /// emulator's build to gather into its cases (`bun run emulator`): the
 /// test it came from, the cart's file, its seed, its buttons, a byte an
-/// update, as runs of one value, and the run every host must give.
+/// update, as runs of one value, what every host's check says of the file,
+/// and the run every host must give. A file past the most a cartridge may
+/// have is no case: its bytes would outweigh every other case's, and a
+/// host makes its own from the manifest's `most`.
 fn keep_case(folder: &Path, file: &[u8], seed: u32, buttons: &[u32], run: &Run) {
+    if file.len() > cartridge::MAX_FILE {
+        return;
+    }
     let test = std::thread::current().name().unwrap_or("").to_owned();
     let mut runs: Vec<(u32, u32)> = Vec::new();
     for &held in buttons {
@@ -222,12 +228,23 @@ fn keep_case(folder: &Path, file: &[u8], seed: u32, buttons: &[u32], run: &Run) 
         .collect::<Vec<_>>()
         .join(",");
     let hex: String = file.iter().map(|byte| format!("{byte:02x}")).collect();
-    let stop = run.stop.replace('\\', "\\\\").replace('"', "\\\"");
+    let stop = quoted(&run.stop);
     let case = format!(
-        r#"{{"test":"{test}","seed":{seed},"file":"{hex}","buttons":[{buttons}],"run":{{"frames":"{:08x}","tones":"{:08x}","stop":"{stop}","updates":{},"rgba":"{:08x}"}}}}"#,
-        run.hash, run.tones, run.updates, run.rgba
+        r#"{{"test":"{test}","seed":{seed},"file":"{hex}","buttons":[{buttons}],"check":"{}","run":{{"frames":"{:08x}","tones":"{:08x}","stop":"{stop}","updates":{},"rgba":"{:08x}"}}}}"#,
+        run.check, run.hash, run.tones, run.updates, run.rgba
     );
     let name = format!("{:08x}.json", fnv(0x811c_9dc5, case.as_bytes()));
     std::fs::create_dir_all(folder).expect("the cases' folder is made");
     std::fs::write(folder.join(name), case).expect("the cases' folder takes a case");
+}
+
+/// `text` inside a JSON string: a refusal's words may carry a line break.
+fn quoted(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '"' | '\\' => format!("\\{c}"),
+            c if c < ' ' => format!("\\u{:04x}", u32::from(c)),
+            c => c.to_string(),
+        })
+        .collect()
 }

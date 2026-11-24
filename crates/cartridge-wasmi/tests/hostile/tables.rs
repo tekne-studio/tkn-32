@@ -4,23 +4,23 @@
 //! or to the wrong type, traps.
 
 use cartridge::MAX_TABLE;
-use cartridge_run::{Refusal, Stop, prepare};
+use cartridge_run::{Refusal, Stop};
 
-use crate::support::{assert_runs, assert_stops, cart};
+use crate::support::{assert_runs, assert_stops, cart, refused};
 
 #[test]
 fn more_than_one_table_is_refused() {
     let file = cart("", "(table 1 funcref) (table 1 funcref)", 1);
-    assert_eq!(prepare(&file).unwrap_err(), Refusal::Table);
+    assert_eq!(refused(&file), Refusal::Table);
     // A hundred of the largest a table may be: one is the most.
     let many = "(table 4096 funcref)".repeat(100);
-    assert_eq!(prepare(&cart("", &many, 1)).unwrap_err(), Refusal::Table);
+    assert_eq!(refused(&cart("", &many, 1)), Refusal::Table);
 }
 
 #[test]
 fn a_table_past_its_limit_is_refused_and_one_at_it_runs() {
     let over = cart("", &format!("(table {} funcref)", MAX_TABLE + 1), 1);
-    assert_eq!(prepare(&over).unwrap_err(), Refusal::Table);
+    assert_eq!(refused(&over), Refusal::Table);
     assert_runs(&cart("", &format!("(table {MAX_TABLE} funcref)"), 1), 1);
 }
 
@@ -45,10 +45,7 @@ fn instructions_that_grow_fill_or_copy_a_table_are_refused() {
             "table.init",
         ),
     ] {
-        assert_eq!(
-            prepare(&cart(update, table, 1)).unwrap_err(),
-            Refusal::Instruction(name)
-        );
+        assert_eq!(refused(&cart(update, table, 1)), Refusal::Instruction(name));
     }
 }
 
@@ -60,7 +57,7 @@ fn a_segment_outside_the_table_is_refused() {
         "(table 2 funcref) (elem (i32.const 0) $nothing $nothing $nothing) (func $nothing)",
     ] {
         assert_eq!(
-            prepare(&cart("", elements, 1)).unwrap_err(),
+            refused(&cart("", elements, 1)),
             Refusal::Segment,
             "{elements}"
         );

@@ -3,9 +3,9 @@
 //! segment that could not be written is refused before any engine sees it.
 
 use cartridge::MAX_MEMORY;
-use cartridge_run::{Refusal, Stop, prepare};
+use cartridge_run::{Refusal, Stop};
 
-use crate::support::{assert_runs, assert_stops, cart};
+use crate::support::{assert_runs, assert_stops, cart, refused};
 
 const PAGES: u32 = (MAX_MEMORY / 65536) as u32;
 
@@ -50,10 +50,7 @@ fn a_maximum_declared_past_the_ceiling_is_the_ceiling() {
 
 #[test]
 fn a_memory_that_starts_past_the_ceiling_is_refused() {
-    assert_eq!(
-        prepare(&cart("", "", PAGES + 1)).unwrap_err(),
-        Refusal::Memory
-    );
+    assert_eq!(refused(&cart("", "", PAGES + 1)), Refusal::Memory);
 }
 
 #[test]
@@ -75,11 +72,7 @@ fn a_segment_outside_the_memory_is_refused() {
         r#"(data (i32.const -1) "a")"#,
         r#"(data (i32.const 65537) "")"#,
     ] {
-        assert_eq!(
-            prepare(&cart("", data, 1)).unwrap_err(),
-            Refusal::Segment,
-            "{data}"
-        );
+        assert_eq!(refused(&cart("", data, 1)), Refusal::Segment, "{data}");
     }
     // To the last byte, it fits.
     assert_runs(&cart("", r#"(data (i32.const 65534) "ab")"#, 1), 1);

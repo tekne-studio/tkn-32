@@ -182,5 +182,8 @@ fn a_kept_file_runs_as_it_always_has() {
         })
         .collect();
     let run = on_every_engine(file, 1, &buttons);
-    assert_eq!(run.to_string(), "d09de795 b0e8de49 running 120 cd60aabf");
+    assert_eq!(
+        run.to_string(),
+        "d09de795 b0e8de49 running 120 cd60aabf check:"
+    );
 }

@@ -7,7 +7,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use cartridge::MAX_FILE;
 use cartridge_run::{Refusal, Stop, prepare};
 
-use crate::support::{cart, on_every_engine, on_wasmi};
+use crate::support::{cart, on_every_engine, on_wasmi, refused};
 
 /// A cartridge with each part of a module preparation rewrites: imports,
 /// globals, a table and its elements, a start function, loops, calls of
@@ -134,10 +134,7 @@ fn what_is_not_webassembly_is_refused() {
         b"(module)",
         b"\x7fELF\x02\x01\x01\0",
     ] {
-        assert!(
-            matches!(prepare(file), Err(Refusal::Invalid(_))),
-            "{file:?}"
-        );
+        assert!(matches!(refused(file), Refusal::Invalid(_)), "{file:?}");
     }
 }
 
@@ -146,7 +143,7 @@ fn a_file_over_its_size_is_refused() {
     let big = format!(r#"(@custom "pad" "{}")"#, "x".repeat(MAX_FILE));
     let file = cart("", &big, 1);
     assert!(file.len() > MAX_FILE);
-    assert_eq!(prepare(&file).unwrap_err(), Refusal::TooLarge(file.len()));
+    assert_eq!(refused(&file), Refusal::TooLarge(file.len()));
 }
 
 #[test]
@@ -165,19 +162,13 @@ fn features_outside_the_set_are_refused() {
         ),
     ] {
         let file = cart(update, more, 1);
-        assert!(
-            matches!(prepare(&file), Err(Refusal::Invalid(_))),
-            "{feature}"
-        );
+        assert!(matches!(refused(&file), Refusal::Invalid(_)), "{feature}");
     }
     for (module, feature) in [
         ("(module (memory 1 1 shared))", "a shared memory"),
         ("(module (memory i64 1))", "a 64-bit memory"),
     ] {
         let file = wat::parse_str(module).expect("the test's module is valid text");
-        assert!(
-            matches!(prepare(&file), Err(Refusal::Invalid(_))),
-            "{feature}"
-        );
+        assert!(matches!(refused(&file), Refusal::Invalid(_)), "{feature}");
     }
 }
