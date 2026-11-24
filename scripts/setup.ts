@@ -1,7 +1,8 @@
 // The tools the console's commands run beside cargo and bun, at the
 // versions its locks name, once after a clone, and again when a pin moves:
 // - wasm-bindgen-cli, whose test runner runs the chip's goldens on wasm32
-//   under node, at the `wasm-bindgen` crate's version in Cargo.lock;
+//   under node, at the `wasm-bindgen` crate's version in Cargo.lock
+//   (wasm-bindgen.ts);
 // - SpiderMonkey's shell, Firefox's engine without the browser, the third
 //   engine the suites run the emulator's host on ([`SPIDERMONKEY`]).
 // The Rust target comes from rust-toolchain.toml. Each tool by its name,
@@ -17,15 +18,6 @@ const asked = process.argv.slice(2);
 const unknown = asked.filter((tool) => !TOOLS.includes(tool));
 if (unknown.length) throw new Error(`no tool named ${unknown.join(', ')}: the tools are ${TOOLS.join(', ')}`);
 const wanted = (tool: string) => asked.length === 0 || asked.includes(tool);
-
-async function wasmBindgen() {
-	const lock = await Bun.file(`${ROOT}/Cargo.lock`).text();
-	const version = lock.match(/^name = "wasm-bindgen"\nversion = "([^"]+)"$/m)?.[1];
-	if (!version) throw new Error('no wasm-bindgen in Cargo.lock');
-	const have = await $`wasm-bindgen --version`.nothrow().quiet().text();
-	if (have.includes(version)) console.log(`wasm-bindgen ${version} is here`);
-	else await $`cargo install wasm-bindgen-cli --locked --version ${version}`;
-}
 
 /**
  * SpiderMonkey's shell, pinned to a Firefox release: each platform's
@@ -73,5 +65,5 @@ async function spiderMonkey() {
 	}
 }
 
-if (wanted('wasm-bindgen')) await wasmBindgen();
+if (wanted('wasm-bindgen')) await $`bun ${ROOT}/scripts/wasm-bindgen.ts`;
 if (wanted('spidermonkey')) await spiderMonkey();

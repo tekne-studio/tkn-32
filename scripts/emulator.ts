@@ -26,7 +26,7 @@
 //   bun run emulator --same <folder>    builds in the pin's image, fails naming each file that differs
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { $ } from 'bun';
 import { ROOT } from './lib';
 
@@ -282,7 +282,9 @@ export async function buildEmulator(out: string, where: Where = 'here'): Promise
 	for (const file of readdirSync(out)) {
 		if (BUILT_FILE.test(file) && !named.has(file)) rmSync(`${out}/${file}`);
 	}
-	const pin = pinAbove();
+	// A host that keeps a pin of this console names it in EMULATOR_PIN, and a build for work
+	// says where it differs from it.
+	const pin = process.env.EMULATOR_PIN ? resolve(process.env.EMULATOR_PIN) : undefined;
 	if (where === 'here' && pin && pin !== out) {
 		const differ = compare(manifestIn(pin), whole).map(({ part }) => part);
 		if (differ.length > 0) {
@@ -296,17 +298,6 @@ export async function buildEmulator(out: string, where: Where = 'here'): Promise
 /** The manifest of the emulator in `folder`. */
 function manifestIn(folder: string): Manifest {
 	return JSON.parse(readFileSync(`${folder}/emulator.json`, 'utf8'));
-}
-
-/**
- * The emulator a host keeps above this console, as the console's tests
- * find it: an `emulator/` with its manifest in a folder this one is in.
- */
-function pinAbove(): string | undefined {
-	for (let folder = dirname(ROOT); folder !== dirname(folder); folder = dirname(folder)) {
-		if (existsSync(`${folder}/emulator/emulator.json`)) return `${folder}/emulator`;
-	}
-	return undefined;
 }
 
 /** Each part of the manifest `built` gives otherwise than `pinned`. */

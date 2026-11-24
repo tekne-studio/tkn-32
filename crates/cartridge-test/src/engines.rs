@@ -5,11 +5,12 @@
 //! forced alone as well as tiering as a browser does. A native host holds
 //! itself to the same runs through the emulator's cases ([`keep_case`]).
 //!
-//! The emulator is the first found up from the crate under test, then up
-//! from this console: the folder a host pins (`emulator/`) or a console's
-//! own build (`target/emulator`, `bun run emulator`). A game in the console
-//! finds the console's build; a game beside it, the build of the console it
-//! depends on, or the pin of the host that keeps that console.
+//! The emulator is the folder `EMULATOR` names: a build of the emulator
+//! names its own, to keep its cases, and a game the one it ships on, a
+//! host's pin, in its `.cargo/config.toml`. Else it is the first found up
+//! from the crate under test, then up from this console: an `emulator/` a
+//! game keeps, or a console's own build (`target/emulator`, `bun run
+//! emulator`), which an example in the console runs.
 
 use std::path::{Path, PathBuf};
 
@@ -104,8 +105,8 @@ fn spidermonkey() -> Option<PathBuf> {
 /// Written beside each run, so a JavaScript engine finds it by a path.
 const SCRIPT: &str = include_str!("run.mjs");
 
-/// The emulator the tests run: the folder `EMULATOR` names, when a build
-/// of the emulator runs them to keep its cases ([`keep_case`]), else the
+/// The emulator the tests run: the folder `EMULATOR` names, a build's of
+/// the emulator keeping its cases ([`keep_case`]) or a game's, else the
 /// first up from the folder cargo names the crate under test by as its
 /// tests run, then up from this crate's own, the console's checkout.
 pub fn emulator() -> PathBuf {

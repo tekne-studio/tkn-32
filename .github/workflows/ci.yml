@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The console's check: its crates, the hostile and contract suites on V8
+  # (node), JavaScriptCore (bun) and SpiderMonkey (its shell, pinned by the
+  # setup), each compiler forced alone, the chip's goldens on V8, its
+  # examples as the page runs them, the worklet against the goldens, and the
+  # page against its engine's types.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      # The compiler rust-toolchain.toml names, with its target and components.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: true
+      - run: bun install --frozen-lockfile
+      # wasm-bindgen's test runner, and SpiderMonkey's shell checked
+      # against the sha256 Mozilla publishes.
+      - name: the console's tools
+        run: bun run setup
+      - run: bun run check
+
+  # The emulator a host pins: built in the pin's image, Linux on x86-64 as
+  # this runner is, then built again and compared file by file, the cases
+  # too, so the source builds one emulator. The folder is kept with the run,
+  # for a host to compare its pin with by hash.
+  emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: true
+      - run: bun install --frozen-lockfile
+      - name: the console's tools
+        run: bun run setup
+      - name: the emulator, built in the pin's image
+        run: bun run emulator --pin target/pin
+      - name: the same source builds the same emulator
+        run: bun run emulator --same target/pin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emulator
+          path: target/pin
