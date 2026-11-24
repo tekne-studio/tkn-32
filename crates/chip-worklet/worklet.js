@@ -17,6 +17,15 @@
 // for good, and the processor ends once the channels are out, so a node let
 // go leaves nothing running.
 //
+// `{ hold: true }` holds the stream with its game: it eases out over `EASE`
+// and stops where it is, rendering nothing, what waits kept. `{ resume:
+// true }` eases it in from there. The worklet keeps its own time, the
+// samples it rendered, and lays and plays every tone on it: held, that
+// time stands still, so what waited, and a batch that comes while it
+// holds, plays on resuming as far apart as it was laid, and outside the
+// two eases the stream is the one never held. Ended while it holds, it
+// ends where its ease out does; ended, it holds and resumes no more.
+//
 // What waits is a ring made once, in the order it plays: the cursor only
 // moves forward, and is set back to the lead only when everything before
 // it is due. A page whose clock runs ahead of the audio device's, or the
@@ -25,7 +34,7 @@
 // time, a silence shortened, and past `AHEAD` no update takes time, so the
 // latency comes back and no tone waits behind another.
 // Plain JavaScript, served as it is: a worklet's scope loads it alone, and
-// its globals (`sampleRate`, `currentFrame`, `registerProcessor`) are in no
+// its globals (`sampleRate`, `registerProcessor`) are in no
 // page's types, so the pages that serve it leave it unchecked.
 // @ts-nocheck
 
@@ -45,6 +54,11 @@ const SLACK = 0.04;
 const AHEAD = 0.25;
 /** How long an ended chip renders on, in seconds: its channels' way out. */
 const TAIL = 0.05;
+/**
+ * How long a hold eases the stream out, and a resume in, in seconds: long
+ * enough that neither clicks, short enough that the stop is heard at once.
+ */
+const EASE = 0.005;
 const CHANNELS = 4;
 const WORDS = 7;
 /**
@@ -66,29 +80,41 @@ class ChipProcessor extends AudioWorkletProcessor {
 		this.count = 0;
 		/** The chip's rendered samples, a view made again only when its memory moves. */
 		this.samples = null;
+		/** Its own time: the frames it rendered. Every frame below is of it. */
+		this.now = 0;
 		/** The frame the next update's tones play at. */
 		this.cursor = 0;
 		/** The frame it ends at, once told to. */
 		this.ends = Infinity;
+		/** Whether it holds, and how loud it is, in frames of an ease from silence. */
+		this.held = false;
+		this.ease = Math.max(1, Math.round(EASE * sampleRate));
+		this.loud = this.ease;
 		this.port.onmessage = (event) => {
 			const data = event.data;
 			if (data instanceof Uint32Array) {
 				if (this.ends === Infinity) this.take(data);
 			} else if (data.end) {
 				this.hush();
-				this.ends = currentFrame + TAIL * sampleRate;
+				// Its way out: its channels', or, held, what is left of its
+				// ease to silence, which a cut would click.
+				this.ends = this.now + (this.held ? this.loud : TAIL * sampleRate);
 			} else if (data.tone) {
 				if (this.ends === Infinity) this.take(Uint32Array.of(0, 1, ...data.tone));
 			} else if (data.hush) this.hush();
+			// Ended, its way out is set: held after, it would never reach it.
+			else if (this.ends !== Infinity) return;
+			else if (data.hold) this.held = true;
+			else if (data.resume) this.held = false;
 		};
 	}
 
 	take(played) {
 		const step = played[0] > 0 ? sampleRate / played[0] : 0;
-		const lead = currentFrame + LEAD * sampleRate;
+		const lead = this.now + LEAD * sampleRate;
 		// Came later than the lead: everything waiting is due, so the
 		// cursor starts again from the lead, and the queue stays in order.
-		if (this.cursor < currentFrame) this.cursor = lead;
+		if (this.cursor < this.now) this.cursor = lead;
 		// How far this batch begins past the slack: so much silence it may
 		// take out.
 		let over = this.cursor - lead - SLACK * sampleRate;
@@ -120,32 +146,49 @@ class ChipProcessor extends AudioWorkletProcessor {
 	}
 
 	// Allocates nothing: the audio thread must never wait on a collection.
+	// Its outputs come silent, and a block held stays so from where the
+	// ease out ends.
 	process(_, outputs) {
 		const out = outputs[0];
 		const left = out[0];
 		const block = left.length;
 		const words = this.words;
 		let done = 0;
-		while (done < block) {
-			const frame = currentFrame + done;
-			while (this.count > 0 && this.at[this.head] <= frame) {
+		while (done < block && this.now < this.ends && !(this.held && this.loud === 0)) {
+			while (this.count > 0 && this.at[this.head] <= this.now) {
 				const w = this.head * WORDS;
 				this.chip.play(words[w], words[w + 1], words[w + 2], words[w + 3], words[w + 4], words[w + 5], words[w + 6]);
 				this.head = (this.head + 1) % RING;
 				this.count--;
 			}
-			const due = this.count > 0 ? this.at[this.head] - currentFrame : block;
-			const len = Math.max(1, Math.min(block, due) - done);
+			const due = this.count > 0 ? this.at[this.head] - this.now : block;
+			// Easing out, the chip renders no further than silence: what
+			// it would render past it plays on resuming.
+			const most = this.held ? this.loud : block;
+			const len = Math.max(1, Math.min(block - done, due, most));
 			const from = this.chip.render(len);
 			const buffer = this.chip.memory.buffer;
 			if (this.samples?.buffer !== buffer || this.samples.byteOffset !== from) {
 				this.samples = new Float32Array(buffer, from, block);
 			}
-			for (let i = 0; i < len; i++) left[done + i] = this.samples[i];
+			if (this.held || this.loud < this.ease) this.eased(left, done, len);
+			else for (let i = 0; i < len; i++) left[done + i] = this.samples[i];
 			done += len;
+			this.now += len;
 		}
 		for (let channel = 1; channel < out.length; channel++) out[channel].set(out[0]);
-		return currentFrame + block < this.ends;
+		return this.now < this.ends;
+	}
+
+	/** `len` samples into `left` from `done`, each as loud as the ease is there. */
+	eased(left, done, len) {
+		const toward = this.held ? -1 : 1;
+		for (let i = 0; i < len; i++) {
+			// Out, each sample before the step down; in, after the step up.
+			if (toward > 0) this.loud = Math.min(this.ease, this.loud + 1);
+			left[done + i] = (this.samples[i] * this.loud) / this.ease;
+			if (toward < 0) this.loud = Math.max(0, this.loud - 1);
+		}
 	}
 }
 

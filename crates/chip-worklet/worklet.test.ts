@@ -5,7 +5,11 @@
 // cut from it at the updates' bounds, slow and fast, late and jittered, rendered
 // in the audio thread's blocks on a clock of its own, gives every sample
 // the headless runner gives, at 48 kHz to its kept hash and at 44.1 kHz
-// to the chip rendered there update by update. It plays the files a page
+// to the chip rendered there update by update. Held and resumed as a
+// cabinet holds its game, the batch of the update before the hold coming
+// after it, it gives the same samples, the stream eased out and in around
+// the hold and silent while it holds; ended as it eases out, it eases on
+// to silence, and ended, a hold keeps it no more. It plays the files a page
 // loads, the chip and the processor of the console's build of the emulator
 // (`bun scripts/emulator.ts`, which `bun scripts/check.ts` runs first).
 import { describe, expect, test } from 'bun:test';
@@ -55,6 +59,8 @@ interface Processor {
 	port: { onmessage(event: { data: unknown }): void };
 	process(inputs: unknown[], outputs: Float32Array[][]): boolean;
 	chip: Chip;
+	/** Its own time: the frames it rendered. */
+	now: number;
 	/** The ring: each waiting tone's frame, from `head`, `count` of them. */
 	at: Float64Array;
 	head: number;
@@ -86,7 +92,6 @@ scope.AudioWorkletProcessor = class {
 };
 scope.registerProcessor = (_: string, processor: typeof Worklet) => (Worklet = processor);
 scope.sampleRate = HEADLESS;
-scope.currentFrame = 0;
 await import(`${EMULATOR}/${processor}`);
 
 function read(name: string): Played {
@@ -141,13 +146,31 @@ function reference(module: Uint8Array, played: Played, rate: number): Float32Arr
 }
 
 /**
+ * A hold, as a cabinet's: from the first block at `atMs` a batch comes in,
+ * for `blocks` of them. The batch comes after the hold, as the one of the
+ * update a game ran before it does, its page told of the hold first.
+ */
+interface Hold {
+	atMs: number;
+	blocks: number;
+}
+
+/** What a worklet rendered, by the audio thread's frames, and where it held and resumed. */
+interface Heard {
+	out: Float32Array;
+	held: number;
+	resumed: number;
+}
+
+/**
  * The worklet fed as a page feeds it: each frame, every update the game ran
  * since the last (at most `CATCH_UP`), posted 20 ms before the audio thread
- * takes it, and rendered in blocks on the audio thread's own clock.
+ * takes it, and rendered in blocks on the audio thread's own clock. Held,
+ * the game and its page's batches wait for it: they come by the worklet's
+ * own time, which a hold stops.
  */
-function worklet(module: Uint8Array, played: Played, rate: number, page: Page): Float32Array {
+function worklet(module: Uint8Array, played: Played, rate: number, page: Page, hold?: Hold): Heard {
 	scope.sampleRate = rate;
-	scope.currentFrame = 0;
 	const processor = new Worklet!({ processorOptions: { module } });
 	let seed = 1;
 	const random = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 2 ** 32;
@@ -163,11 +186,20 @@ function worklet(module: Uint8Array, played: Played, rate: number, page: Page): 
 		batches.push({ atMs: ms + 20, played: batch(played, played.updates.slice(ran, ran + count)) });
 		ran += owed;
 	}
-	const out = new Float32Array(Math.ceil(((ms / 1000) * rate) + played.length * (rate / HEADLESS)) + rate);
+	const holds = hold ? hold.blocks * BLOCK : 0;
+	const out = new Float32Array(Math.ceil(((ms / 1000) * rate) + played.length * (rate / HEADLESS)) + rate + holds);
+	const heard: Heard = { out, held: -1, resumed: -1 };
 	let next = 0;
 	for (let frame = 0; frame + BLOCK <= out.length; frame += BLOCK) {
-		scope.currentFrame = frame;
-		const nowMs = (frame / rate) * 1000 * (1 + (page.ppm ?? 0) / 1e6);
+		const nowMs = (processor.now / rate) * 1000 * (1 + (page.ppm ?? 0) / 1e6);
+		const batchNow = next < batches.length && batches[next].atMs <= nowMs;
+		if (hold && heard.held < 0 && (frame / rate) * 1000 >= hold.atMs && batchNow) {
+			processor.port.onmessage({ data: { hold: true } });
+			heard.held = frame;
+		} else if (heard.held >= 0 && heard.resumed < 0 && frame === heard.held + holds) {
+			processor.port.onmessage({ data: { resume: true } });
+			heard.resumed = frame;
+		}
 		for (; next < batches.length && batches[next].atMs <= nowMs; next++) {
 			processor.port.onmessage({ data: batches[next].played });
 		}
@@ -175,7 +207,21 @@ function worklet(module: Uint8Array, played: Played, rate: number, page: Page): 
 		processor.process([], [[block]]);
 		out.set(block, frame);
 	}
-	return out;
+	return heard;
+}
+
+/**
+ * The samples a stream held at `held` and resumed at `resumed` plays, by
+ * its own time, from the stream never held: eased out over `ease` frames,
+ * each before its step down, and in over as many, each after its step up,
+ * the chip's sample times the ease, as the worklet reckons it.
+ */
+function eased(never: Float32Array, held: number, ease: number): Float32Array {
+	return never.map((sample, i) => {
+		if (i >= held && i < held + ease) return Math.fround((sample * (ease - (i - held))) / ease);
+		if (i >= held + ease && i < held + 2 * ease) return Math.fround((sample * (i - held - ease + 1)) / ease);
+		return sample;
+	});
 }
 
 /** What an hour of a page did to the worklet. */
@@ -210,7 +256,6 @@ interface Clocks {
 function run(module: Uint8Array, played: Played, { seconds, ppm, waited = 0, from = 0 }: Clocks): Hour {
 	const rate = HEADLESS;
 	scope.sampleRate = rate;
-	scope.currentFrame = 0;
 	const processor = new Worklet!({ processorOptions: { module } });
 	const chip = processor.chip;
 	const ring = processor.at.length;
@@ -248,7 +293,6 @@ function run(module: Uint8Array, played: Played, { seconds, ppm, waited = 0, fro
 	let ran = waited;
 	const block = new Float32Array(BLOCK);
 	for (let frame = 0; ran < total || processor.count > 0; frame += BLOCK) {
-		scope.currentFrame = frame;
 		const nowMs = startMs + (frame / rate) * 1000 * (1 + ppm / 1e6);
 		for (; ran < total && nextMs + 20 <= nowMs; nextMs += 1000 / UPDATES_A_SECOND + (random() * 2 - 1) * 2) {
 			const owed = Math.min(Math.floor((nextMs * UPDATES_A_SECOND) / 1000), total) - ran;
@@ -283,13 +327,86 @@ describe('the worklet', () => {
 
 		for (const [what, page] of Object.entries(PAGES)) {
 			test(`${name}, ${what}: every sample, at 48 and 44.1 kHz`, () => {
-				expect(fingerprint(heard(worklet(module, played, HEADLESS, page), at48))).toBe(played.samples);
-				const out = heard(worklet(module, played, 44_100, page), at44);
+				expect(fingerprint(heard(worklet(module, played, HEADLESS, page).out, at48))).toBe(played.samples);
+				const out = heard(worklet(module, played, 44_100, page).out, at44);
 				expect(out.length).toBe(at44.length);
 				expect(out.findIndex((sample, i) => sample !== at44[i])).toBe(-1);
 			});
+
+			// Held mid play for a cabinet's window, 10 s, as its player
+			// leaves: silent from the ease out to the resume, and by its own
+			// time the stream never held, eased out and in.
+			test(`${name}, ${what}: held and resumed, the stream never held, at 48 and 44.1 kHz`, () => {
+				for (const rate of [HEADLESS, 44_100]) {
+					const never = worklet(module, played, rate, page).out;
+					const ease = Math.round(0.005 * rate);
+					// The block of the first sample that sounds past two fifths of the session, or of its first.
+					const sounds = (from: number) => never.findIndex((sample, i) => i >= from && sample !== 0);
+					const late = sounds((played.length * rate) / HEADLESS / 2.5);
+					const at = Math.floor((late >= 0 ? late : sounds(0)) / BLOCK) * BLOCK;
+					expect(at).toBeGreaterThan(0);
+					const hold = { atMs: (at / rate) * 1000, blocks: Math.round((10 * rate) / BLOCK) };
+					const { out, held, resumed } = worklet(module, played, rate, page, hold);
+					expect(held).toBeGreaterThanOrEqual(at);
+					expect(out.subarray(held + ease, resumed).every((sample) => sample === 0)).toBe(true);
+					// By its own time, as long as the stream never held: past it both are silent.
+					const own = new Float32Array(never.length);
+					own.set(out.subarray(0, held + ease));
+					own.set(out.subarray(resumed, resumed + never.length - held - ease), held + ease);
+					expect(out.subarray(resumed + never.length - held - ease).every((sample) => sample === 0)).toBe(true);
+					const expected = eased(never, held, ease);
+					expect(own.findIndex((sample, i) => sample !== expected[i])).toBe(-1);
+				}
+			});
 		}
 	}
+
+	test('a stream ended while it holds ends at once', () => {
+		const played = read('rocks');
+		scope.sampleRate = HEADLESS;
+		const processor = new Worklet!({ processorOptions: { module } });
+		processor.port.onmessage({ data: batch(played, played.updates.slice(0, 60)) });
+		const block = new Float32Array(BLOCK);
+		for (let blocks = 0; blocks < 100; blocks++) expect(processor.process([], [[block]])).toBe(true);
+		processor.port.onmessage({ data: { hold: true } });
+		for (let blocks = 0; blocks < 10; blocks++) processor.process([], [[block]]);
+		const now = processor.now;
+		processor.process([], [[block]]);
+		expect(processor.now).toBe(now);
+		processor.port.onmessage({ data: { end: true } });
+		expect(processor.process([], [[block]])).toBe(false);
+	});
+
+	test('a stream ended as it eases out eases on to silence, and ends there', () => {
+		const played = read('rocks');
+		scope.sampleRate = HEADLESS;
+		const processor = new Worklet!({ processorOptions: { module } });
+		processor.port.onmessage({ data: batch(played, played.updates.slice(0, 60)) });
+		const block = new Float32Array(BLOCK);
+		for (let blocks = 0; blocks < 100; blocks++) processor.process([], [[block]]);
+		const held = processor.now;
+		processor.port.onmessage({ data: { hold: true } });
+		processor.process([], [[block]]);
+		processor.port.onmessage({ data: { end: true } });
+		let blocks = 0;
+		while (processor.process([], [[block]]) && blocks < 1000) blocks++;
+		expect(blocks).toBeLessThan(2);
+		expect(processor.now).toBe(held + Math.round(0.005 * HEADLESS));
+	});
+
+	test('a stream ended, then held, ends all the same', () => {
+		const played = read('rocks');
+		scope.sampleRate = HEADLESS;
+		const processor = new Worklet!({ processorOptions: { module } });
+		processor.port.onmessage({ data: batch(played, played.updates.slice(0, 60)) });
+		const block = new Float32Array(BLOCK);
+		for (let blocks = 0; blocks < 100; blocks++) processor.process([], [[block]]);
+		processor.port.onmessage({ data: { end: true } });
+		processor.port.onmessage({ data: { hold: true } });
+		let blocks = 0;
+		while (processor.process([], [[block]]) && blocks < 1000) blocks++;
+		expect(blocks).toBeLessThanOrEqual(Math.ceil((0.05 * HEADLESS) / BLOCK));
+	});
 
 	// A clock 300 ppm off drifts 1.08 s in an hour: the page's ahead, a
 	// silence shortened now and then; the device's ahead, the cursor set
