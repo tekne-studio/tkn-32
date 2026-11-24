@@ -85,6 +85,8 @@ bun run workbench ../mygame
 - `../mygame` is a cargo workspace of its own that depends on the console's
   crates by path, its lock begun at the versions the console tests. The
   game is yours, under the licence you choose.
+- What the console's commands build names its sources from the game's
+  folder and the console's: a file you share carries no path of your machine.
 - `src/lib.rs` is the game: `cartridge::cart!` exports it, `start` makes
   its state from the seed, `update` reads the buttons and draws.
 - `build.rs` gives it its stack and writes `cover.png` into the file as its

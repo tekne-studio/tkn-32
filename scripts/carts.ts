@@ -2,6 +2,7 @@
 // game of one's own, by its folder. Each is built in the cargo workspace it
 // is in, which keeps it in its own target/.
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { $ } from 'bun';
 import { ROOT } from './lib';
@@ -69,8 +70,38 @@ export async function cartNamed(asked: string): Promise<Cart> {
 export async function build(carts: Cart[], quiet = false) {
 	for (const root of new Set(carts.map(({ root }) => root))) {
 		const packages = carts.filter((cart) => cart.root === root).flatMap(({ name }) => ['-p', name]);
-		await $`cargo build --release ${quiet ? ['-q'] : []} --target wasm32-unknown-unknown ${packages}`.cwd(root);
+		// Joined to the rustflags the workspace's own config gives, never in their place.
+		const flags = `target.wasm32-unknown-unknown.rustflags=${JSON.stringify(await remapped(root))}`;
+		await $`cargo build --release ${quiet ? ['-q'] : []} --target wasm32-unknown-unknown --config ${flags} ${packages}`.cwd(root);
 	}
+	// RUSTFLAGS in the environment replaces every rustflags cargo is given, these too.
+	for (const cart of carts) {
+		const bytes = Buffer.from(await Bun.file(built(cart)).arrayBuffer());
+		if (bytes.includes(homedir())) {
+			throw new Error(`${built(cart)} names ${homedir()}: build it with RUSTFLAGS unset, so its paths are written short`);
+		}
+	}
+}
+
+/**
+ * What keeps the builder's machine out of a cart: rustc writes a source's path where a panic
+ * points, whole for a crate outside the workspace (the console's, to a game of one's own) and
+ * for the standard library's sources once rust-src is installed. Each prefix is written as a
+ * short name instead, and a later one wins over an earlier one that holds it.
+ */
+async function remapped(root: string): Promise<string[]> {
+	const sysroot = (await $`rustc --print sysroot`.cwd(root).quiet().text()).trim();
+	const commit = /^commit-hash: (\S+)$/m.exec(await $`rustc -vV`.cwd(root).quiet().text())?.[1];
+	if (!commit) throw new Error('rustc -vV names no commit-hash');
+	const prefixes: [string, string][] = [
+		[homedir(), '~'],
+		[process.env.CARGO_HOME ?? `${homedir()}/.cargo`, '/cargo'],
+		// Where the standard library's sources are said to be when rust-src is not installed.
+		[`${sysroot}/lib/rustlib/src/rust`, `/rustc/${commit}`],
+		[ROOT, 'tkn-32'],
+		[root, '.']
+	];
+	return prefixes.map(([from, to]) => `--remap-path-prefix=${from}=${to}`);
 }
 
 /** Where a built cart lies in its workspace. */
