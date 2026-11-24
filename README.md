@@ -128,6 +128,22 @@ bun run cart rocks --buttons @session.txt --frames 351 --wav out/rocks.wav
 - `--wav FILE`: the tones through the chip as a 48 kHz WAV.
 - `--seed N`, `--frames N`, `--out DIR`, `--at N,N`, `--scale N`.
 
+## The emulator
+
+`bun run emulator [folder]` builds the emulator into one folder,
+`target/emulator` by default, each file named by the SHA-256 of its bytes
+and `emulator.json` naming them: the runner and `host.js`, the chip and
+its processor, and the cases every host is held to. The workbench and the
+tests run it.
+
+- Its bytes are the platform's that builds it, so a host pins the build of
+  one image, Linux on x86-64 by digest: `bun run emulator --pin <folder>`,
+  with Docker.
+- `--same <folder>` builds it in that image again and names each file that
+  differs.
+- Built on another platform, it says when its files are not those of the
+  pin a host above the console keeps.
+
 ## What is here
 
 | Path | What |
@@ -135,15 +151,16 @@ bun run cart rocks --buttons @session.txt --frames 351 --wav out/rocks.wav
 | `crates/cartridge` | the contract as types and constants, `Screen`, the font, `cart!` and `cover!`; `no_std` |
 | `crates/cartridge-build` | what a game's build script calls: its stack and its cover |
 | `crates/cartridge-run` | prepares a file and runs it on any engine behind one trait |
-| `crates/cartridge-wasmi` | the native engine, wasmi; its `hostile` tests are the contract's proof |
-| `crates/cartridge-web` | the browser's engine |
+| `crates/cartridge-wasmi` | wasmi, the reference; its `hostile` and `contract` suites are the contract's proof |
+| `crates/runner` | the emulator's runner, a host's games in one WebAssembly module, and `host.js`, its host on a JavaScript engine |
 | `crates/chip`, `crates/chip-worklet` | the sound chip, and it as an AudioWorklet module |
 | `crates/headless` | the runner behind `bun run cart` |
-| `crates/workbench`, `web/` | the workbench's engine and its page |
+| `web/` | the workbench's page |
 | `examples/` | `rocks`, a ship against drifting rocks; `dot`; `boom`, tones that move; `hues`, all 32 colours |
 
 `bun run check` runs fmt, clippy, the tests, the hostile and contract
-suites and the chip's goldens on V8, and the workbench page's check.
+suites on wasmi and through the emulator on node, bun and SpiderMonkey, the
+chip's goldens on V8, and the workbench page's check.
 
 ## License
 
