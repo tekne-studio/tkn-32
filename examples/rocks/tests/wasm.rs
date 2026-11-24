@@ -92,7 +92,10 @@ fn its_frames_and_tones_are_the_ones_kept() {
     // contract or to `cart!` that moves them changes what every copy of
     // rocks already made shows.
     let run = agree_on_every_engine(&(0..TICKS).map(buttons).collect::<Vec<_>>());
-    assert_eq!(run.to_string(), "8acec86a 15ccf266 running 5400 669ab0d8");
+    assert_eq!(
+        run.to_string(),
+        "8acec86a 15ccf266 running 5400 669ab0d8 check:"
+    );
 }
 
 fn agree_on_every_engine(held: &[u32]) -> cartridge_test::Run {
