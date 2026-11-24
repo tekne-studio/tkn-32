@@ -1,0 +1,33 @@
+[package]
+name = "hues"
+description = "A game of all 32 colours: its cover, then its palette as 32 bands the arrows pick from. The guide's example of a palette used whole; no version ships it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cartridge.workspace = true
+
+# Its cover, cover.png, made the section `cartridge::cover!` places.
+[build-dependencies]
+cartridge-build.workspace = true
+
+[dev-dependencies]
+# Its test runs the game built to WebAssembly on wasmi and on the browser
+# engines at hand.
+cartridge-test.workspace = true
+cartridge-run.workspace = true
+cartridge-wasmi.workspace = true
+
+# A cartridge writes no `unsafe`: it is denied, and allowed only on the
+# exports `cartridge::cart!` writes; a check holds it.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

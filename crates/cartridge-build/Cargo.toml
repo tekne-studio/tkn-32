@@ -1,0 +1,15 @@
+[package]
+name = "cartridge-build"
+description = "What a cart's build script calls: its cover, a PNG, checked and written as the section cartridge::cover! places in the game."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cartridge.workspace = true
+png = "0.18"
+
+[lints]
+workspace = true

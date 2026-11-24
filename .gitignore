@@ -1,0 +1,8 @@
+# Rust
+target/
+
+# Bun, Node
+node_modules/
+
+# What `bun run cart` writes
+out/

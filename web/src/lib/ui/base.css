@@ -1,0 +1,65 @@
+/* The workbench's own tokens: a debugger's dark room, the game the only
+   colour in it. */
+:root {
+	--ground: #121018;
+	--panel: #1b1824;
+	--rule: #2c2838;
+	--ink: #e8e6f0;
+	--dim: #8f8aa3;
+	--faint: #5a5570;
+	--accent: #3fd6a8;
+	--warm: #f5c542;
+	--violet: #9c7cff;
+	--alert: #ff4d6a;
+	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	--gap: 12px;
+	--radius: 6px;
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--ink);
+	font: 13px/1.4 var(--mono);
+}
+
+button,
+select,
+input {
+	font: inherit;
+	color: inherit;
+	background: var(--panel);
+	border: 1px solid var(--rule);
+	border-radius: var(--radius);
+	padding: 4px 8px;
+}
+
+button {
+	cursor: pointer;
+}
+
+button:hover,
+select:hover {
+	border-color: var(--faint);
+}
+
+button[aria-pressed='true'] {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+canvas {
+	image-rendering: pixelated;
+	display: block;
+}

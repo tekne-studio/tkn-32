@@ -1,0 +1,6 @@
+# A test built for wasm32 runs under node, through the runner that comes
+# with wasm-bindgen-cli, installed at the version Cargo.lock locks
+# wasm-bindgen at: there a test proves the WebAssembly does what the
+# native build does.
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"

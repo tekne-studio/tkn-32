@@ -1,0 +1,22 @@
+[package]
+name = "chip-worklet"
+description = "The arcade's sound chip as a WebAssembly module of plain exports, for an AudioWorklet to run."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+chip.workspace = true
+
+# Its exports are named by hand, which Rust counts as unsafe: it is denied,
+# and allowed only on them, as on a cartridge's.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

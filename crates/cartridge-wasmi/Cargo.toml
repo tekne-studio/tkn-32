@@ -1,0 +1,24 @@
+[package]
+name = "cartridge-wasmi"
+description = "The native engine of a cartridge: wasmi, a WebAssembly interpreter in plain Rust, behind cartridge-run's Instance."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cartridge.workspace = true
+cartridge-run.workspace = true
+# auto-dispatch: tail-call dispatch where the build optimises, the loop
+# where it does not, so a debug build keeps a flat stack.
+wasmi = { version = "2.0.2", default-features = false, features = ["std", "validate", "auto-dispatch"] }
+
+[dev-dependencies]
+cartridge-test.workspace = true
+wat = "1.228"
+# Reads a prepared file back, to see what it exports.
+wasmparser = { version = "0.228", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

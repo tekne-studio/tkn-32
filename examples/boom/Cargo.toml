@@ -1,0 +1,32 @@
+[package]
+name = "boom"
+description = "Two pads of tones that move: an 808 boom on A and a falling whoosh on B. The example of a tone that moves; no version ships it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cartridge.workspace = true
+
+[build-dependencies]
+cartridge-build.workspace = true
+
+[dev-dependencies]
+# Its test runs the game built to WebAssembly on wasmi and on the browser
+# engines at hand.
+cartridge-test.workspace = true
+cartridge-run.workspace = true
+cartridge-wasmi.workspace = true
+
+# A cartridge writes no `unsafe`: it is denied, and allowed only on the
+# exports `cartridge::cart!` writes; a check holds it.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

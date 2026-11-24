@@ -1,0 +1,36 @@
+[package]
+name = "rocks"
+description = "The first cartridge: a ship against drifting rocks, drawn in lines."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cartridge.workspace = true
+
+# Its cover, cover.png, made the section `cartridge::cover!` places.
+[build-dependencies]
+cartridge-build.workspace = true
+
+[dev-dependencies]
+# Its test runs the game built to WebAssembly as a cabinet does, on wasmi
+# and on the browser engines at hand.
+cartridge-test.workspace = true
+cartridge-run.workspace = true
+cartridge-wasmi.workspace = true
+# Its cover's test holds cover.png to the game's drawing, and writes it.
+cartridge-build.workspace = true
+png = "0.18"
+
+# A cartridge writes no `unsafe`: it is denied, and allowed only on the
+# exports `cartridge::cart!` writes; a check holds it.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

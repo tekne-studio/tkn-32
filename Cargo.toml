@@ -1,0 +1,45 @@
+# TKN-32, a console of tiny games, as a workspace of its own: under crates/
+# the contract a game keeps, what runs it and the tools that show it; under
+# examples/ the games it is taught by. It depends on nothing outside this
+# folder, so whatever builds on it, as a host or as a game, depends on it by
+# path and is never one of its members.
+[workspace]
+resolver = "3"
+members = ["crates/*", "examples/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+cartridge = { path = "crates/cartridge" }
+cartridge-run = { path = "crates/cartridge-run" }
+cartridge-wasmi = { path = "crates/cartridge-wasmi" }
+cartridge-web = { path = "crates/cartridge-web" }
+cartridge-build = { path = "crates/cartridge-build" }
+cartridge-test = { path = "crates/cartridge-test" }
+chip = { path = "crates/chip" }
+
+libm = "0.2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# A game's tests run it on wasmi in a debug build: the interpreter at full
+# speed keeps them quick.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# A game's file is small and fast: one unit, linked whole.
+[profile.release]
+lto = "thin"
+codegen-units = 1

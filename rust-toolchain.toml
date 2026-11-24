@@ -1,0 +1,7 @@
+# One compiler, by its exact version: every build that reads this file runs
+# on it, so what a release builds names its compiler, and moving to another
+# is a commit.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

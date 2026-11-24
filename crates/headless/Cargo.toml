@@ -1,0 +1,18 @@
+[package]
+name = "headless"
+description = "A cartridge run with no window on wasmi: a seed and a script of buttons in; pictures of its screen, its tones through the arcade's chip as a WAV, the frames hash and what it spent out."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+cartridge.workspace = true
+cartridge-run.workspace = true
+cartridge-wasmi.workspace = true
+chip.workspace = true
+png = "0.18"
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+# The build, SvelteKit's own files, and the bench's engine as `bun run
+# workbench` builds it.
+/build/
+/.svelte-kit/
+/src/lib/pkg/

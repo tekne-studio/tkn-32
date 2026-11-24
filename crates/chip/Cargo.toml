@@ -1,0 +1,18 @@
+[package]
+name = "chip"
+description = "The arcade's sound chip: four channels that play a cartridge's tones sample by sample, a square, triangle and saw without aliasing and noise through a low-pass, the same samples on every platform."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+cartridge.workspace = true
+libm.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[lints]
+workspace = true

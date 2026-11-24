@@ -1,0 +1,8 @@
+TKN-32 is free software under the MIT licence: LICENSE covers the code, the
+docs and the example games in `examples/`.
+
+Copyright (C) 2026 Tekne Studio
+
+A game made for TKN-32 is its maker's, under the terms its maker chooses:
+building against the `cartridge` crates asks only that their copyright
+notice and the MIT permission notice travel with copies of them.

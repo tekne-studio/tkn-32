@@ -1,0 +1,16 @@
+[package]
+name = "cartridge-test"
+description = "What a cartridge's tests run it with: its own crate built to WebAssembly as a release builds it, and a run on wasmi and on every browser engine at hand, which must agree to the frame."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cartridge.workspace = true
+cartridge-run.workspace = true
+cartridge-wasmi.workspace = true
+
+[lints]
+workspace = true
