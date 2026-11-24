@@ -5,9 +5,11 @@
 //! forced alone as well as tiering as a browser does. A native host holds
 //! itself to the same runs through the emulator's cases ([`keep_case`]).
 //!
-//! The emulator is the one the testing crate's checkout runs: the folder a
-//! host pins (`emulator/` in an ancestor of the crate under test), or else
-//! the console's own build (`target/emulator`, `bun run emulator`).
+//! The emulator is the first found up from the crate under test, then up
+//! from this console: the folder a host pins (`emulator/`) or a console's
+//! own build (`target/emulator`, `bun run emulator`). A game in the console
+//! finds the console's build; a game beside it, the build of the console it
+//! depends on, or the pin of the host that keeps that console.
 
 use std::path::{Path, PathBuf};
 
@@ -104,8 +106,8 @@ const SCRIPT: &str = include_str!("run.mjs");
 
 /// The emulator the tests run: the folder `EMULATOR` names, when a build
 /// of the emulator runs them to keep its cases ([`keep_case`]), else the
-/// one the checkout of the crate under test runs, found from the folder
-/// cargo names that crate by as its tests run.
+/// first up from the folder cargo names the crate under test by as its
+/// tests run, then up from this crate's own, the console's checkout.
 pub fn emulator() -> PathBuf {
     if let Some(folder) = std::env::var_os("EMULATOR") {
         return PathBuf::from(folder);
@@ -113,6 +115,7 @@ pub fn emulator() -> PathBuf {
     let tested = std::env::var("CARGO_MANIFEST_DIR").expect("cargo runs the test");
     Path::new(&tested)
         .ancestors()
+        .chain(Path::new(env!("CARGO_MANIFEST_DIR")).ancestors())
         .flat_map(|dir| [dir.join("emulator"), dir.join("target/emulator")])
         .find(|folder| folder.join("emulator.json").exists())
         .expect("no emulator built: `bun run emulator` in tkn-32 builds it")
