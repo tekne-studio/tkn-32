@@ -14,9 +14,13 @@
 // panic's location names no one's home. Its bytes are still the platform's
 // that builds it: cargo hashes the build's machine into each crate under a
 // build script, which moves the runner's symbols and the order of its
-// functions. So a pin is built on one platform, `IMAGE`, Linux on x86-64,
-// by Docker on any machine, natively on that one and emulated on another,
-// and is proved its source's by building it there again (`--same`).
+// functions. So a pin's runner and chip are built on one platform, `IMAGE`,
+// Linux on x86-64, by Docker on any machine, natively on that one and
+// emulated on another; its host and processor are the source's files as
+// they are, and its cases come from the suites on the machine at hand,
+// running the image's runner. `--same` builds and gathers it all again and
+// compares every file, the cases too. A step in the image past `HANG` is
+// taken as hung and fails.
 //   bun run emulator [folder]           this machine's build, for work: the workbench, the tests
 //   bun run emulator --pin <folder>     the build in the pin's image: what a host pins
 //   bun run emulator --same <folder>    builds in the pin's image, fails naming each file that differs
@@ -46,6 +50,17 @@ const PLATFORM = 'linux/amd64';
 /** Where the console is in the image's container, and its build. */
 const INSIDE = '/tkn-32';
 const INSIDE_TARGET = '/target';
+/**
+ * The longest a step in the image may take, in seconds, emulated included:
+ * past it the step is taken as hung and fails, and so does the build that
+ * waits on its lock.
+ */
+const HANG = 15 * 60;
+
+/** `command` in the image's shell, failing with `what` when it runs past `HANG`. */
+function bounded(command: string, what: string): string {
+	return `{ timeout -k 10 ${HANG} ${command} || { s=$?; [ $s -ne 124 ] || echo "${what} ran past ${HANG} s: taken as hung" >&2; exit $s; }; }`;
+}
 
 /**
  * What `emulator.json` says: the versions of the contract and of the
@@ -156,7 +171,8 @@ async function builder(): Promise<string> {
 	const channel = toolchain.match(/^channel = "([^"]+)"$/m)?.[1];
 	const imaged = IMAGE.match(/:([^@]+)@/)?.[1];
 	if (channel !== imaged) throw new Error(`rust-toolchain.toml names ${channel}, the pin's image ${imaged}: pin the image of that compiler`);
-	const dockerfile = `FROM --platform=${PLATFORM} ${IMAGE}\nCOPY rust-toolchain.toml /toolchain/\nRUN cd /toolchain && rustup toolchain install\n`;
+	const install = bounded('rustup toolchain install', 'the toolchain install');
+	const dockerfile = `FROM --platform=${PLATFORM} ${IMAGE}\nCOPY rust-toolchain.toml /toolchain/\nRUN cd /toolchain && ${install}\n`;
 	const tag = `tkn-32-emulator:${sha256(new TextEncoder().encode(dockerfile + toolchain)).slice(0, 16)}`;
 	if ((await $`docker image inspect ${tag}`.quiet().nothrow()).exitCode === 0) return tag;
 	const context = mkdtempSync(`${tmpdir()}/tkn-32-emulator-`);
@@ -175,18 +191,21 @@ async function builder(): Promise<string> {
  * console's files, every one git keeps or would, go in on the container's
  * input and the two built files come out on its output, so no folder of
  * this machine is shared with it. Cargo's downloads and its target folder
- * are Docker volumes, kept between builds and shared by every checkout, so
- * a build and the packing of what it built hold one lock: another
- * checkout's build never lands between them. Cargo takes a source file
- * older than its last build as built, so the files land with the time they
- * are unpacked, never the one they carry: another checkout's older file of
- * other bytes is built again.
+ * are Docker volumes, kept between builds and shared by every checkout.
+ * So one build at a time holds the target folder, from before its files
+ * are unpacked until what it built is packed, and the console's own
+ * packages are always built again: cargo judges them by the times of
+ * their files, which another checkout's build, or the clock of a machine
+ * that slept, makes look built. The registry's crates are judged by their
+ * versions and stay built.
  */
 async function builtInImage(): Promise<[Uint8Array, Uint8Array]> {
 	const tag = await builder();
 	const run = ['docker', 'run', '--rm', '--platform', PLATFORM];
 	const asked = 'rustc --print sysroot && rustc -vV && printf "%s\\n" "$CARGO_HOME"';
-	const said = (await $`${run} -w /toolchain ${tag} sh -c ${asked}`.text()).trim().split('\n');
+	const said = (await $`${run} -w /toolchain ${tag} sh -c ${bounded(`sh -c '${asked}'`, 'asking the compiler')}`.text())
+		.trim()
+		.split('\n');
 	const cargo = said[said.length - 1];
 	const flags = remapped({ sysroot: said[0], version: said.slice(1, -1).join('\n'), cargo, root: INSIDE });
 	const files = (await $`git ls-files -z --cached --others --exclude-standard`.cwd(ROOT).text())
@@ -197,9 +216,11 @@ async function builtInImage(): Promise<[Uint8Array, Uint8Array]> {
 		writeFileSync(`${work}/files`, files.join('\0'));
 		mkdirSync(`${work}/built`);
 		const inside = [
-			`mkdir -p ${INSIDE} && tar -x -m -f - -C ${INSIDE} && cd ${INSIDE}`,
-			`exec 9>${INSIDE_TARGET}/.emulator.lock && flock 9`,
-			`cargo ${BUILD.join(' ')} >&2`,
+			`exec 9>${INSIDE_TARGET}/.emulator.lock`,
+			`{ flock -w ${HANG} 9 || { echo "another build held the target folder past ${HANG} s" >&2; exit 1; }; }`,
+			`mkdir -p ${INSIDE} && tar -x -f - -C ${INSIDE} && cd ${INSIDE}`,
+			`cargo clean --release --target wasm32-unknown-unknown --workspace >&2`,
+			bounded(`cargo ${BUILD.join(' ')} >&2`, 'the build'),
 			`tar -c -f - -C ${INSIDE_TARGET}/wasm32-unknown-unknown/release ${RUNNER} ${CHIP}`
 		].join(' && ');
 		const volumes = ['-v', `tkn-32-emulator-cargo:${cargo}/registry`, '-v', `tkn-32-emulator-target:${INSIDE_TARGET}`];
