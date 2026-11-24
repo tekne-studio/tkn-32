@@ -5,12 +5,9 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use cartridge::MAX_FILE;
-use cartridge_run::{Refusal, prepare};
+use cartridge_run::{Refusal, Stop, prepare};
 
 use crate::support::{cart, on_every_engine, on_wasmi};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
 
 /// A cartridge with each part of a module preparation rewrites: imports,
 /// globals, a table and its elements, a start function, loops, calls of
@@ -44,7 +41,9 @@ fn holds(file: &[u8], what: &dyn Fn() -> String) -> bool {
     let Ok(run) = catch_unwind(AssertUnwindSafe(|| on_wasmi(file, 1, &[0, 1]))) else {
         panic!("the runner panicked on {}", what());
     };
-    assert!(!run.stop.starts_with("Load"), "{}: {run}", what());
+    // A load's stop says the engine's words after its own.
+    let load = Stop::Load(String::new()).to_string();
+    assert!(!run.stop.starts_with(&load), "{}: {run}", what());
     true
 }
 
@@ -109,8 +108,8 @@ fn a_cartridge_with_any_byte_changed_is_refused_or_runs() {
             changed[at] = byte;
             let what = || format!("byte {at} changed from {was:#04x} to {byte:#04x}");
             if holds(&changed, &what) {
-                // Some hundreds are let through: one in 64 runs on the
-                // browser engines too, which must agree with wasmi.
+                // Some hundreds are let through: one in 64 runs through
+                // the emulator's hosts too, which must agree with wasmi.
                 if let_through % 64 == 0 {
                     on_every_engine(&changed, 1, &[0, 1]);
                 }

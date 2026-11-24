@@ -25,6 +25,9 @@
 
 	const SPEEDS = [0.25, 0.5, 1, 2, 4];
 	const BUTTONS = ['←', '→', '↑', '↓', 'A', 'B', 'START'];
+	const ARROWS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
+	/** How a key's name reads in the hint: `KeyZ` as Z, both shifts as Shift. */
+	const said = (code: string) => ARROWS[code] ?? code.replace(/^(Key|Numpad)/, '').replace(/(.)(Left|Right)$/, '$1');
 
 	const sound = new Sound();
 	const bench = new Bench(sound);
@@ -36,6 +39,13 @@
 	let scale = $state(4);
 	let pointed: { x: number; y: number; index: number } | null = $state(null);
 	let seen = $derived(bench.seen);
+	/** The keys of each button, as the console's table names them. */
+	let keys = $derived(
+		BUTTONS.map((name, bit) => {
+			const named = (bench.console?.keys ?? []).filter(([, button]) => button === 1 << bit).map(([code]) => said(code));
+			return `${name}: ${[...new Set(named)].join(' or ')}`;
+		}).join(' · ')
+	);
 	/** The running cart as `bun run cart` takes it: a file opened goes by its name. */
 	let called = $derived(carts.find(({ name }) => name === bench.name)?.called ?? (bench.name || 'rocks'));
 	/** How the last build went, when it failed: the compiler's words. */
@@ -201,7 +211,19 @@
 				{#snippet aside()}
 					{#if pointed}x {pointed.x} y {pointed.y} · colour {pointed.index.toString(32)}{:else}160 × 120{/if}
 				{/snippet}
-				<Screen rgba={seen?.rgba} indices={seen?.indices} colours={Math.max(1, (seen?.palette.length ?? 4) / 4)} {scale} bind:pointed />
+				{#if bench.console}
+					<Screen
+						width={bench.console.width}
+						height={bench.console.height}
+						rgba={seen?.rgba}
+						indices={seen?.indices}
+						colours={Math.max(1, (seen?.palette.length ?? 4) / 4)}
+						{scale}
+						bind:pointed
+					/>
+				{:else}
+					<p class="hint">{bench.broken ? `The emulator did not start: ${bench.broken}` : 'The emulator starts…'}</p>
+				{/if}
 				<div class="transport">
 					<button aria-pressed={bench.playing} onclick={() => (bench.playing = !bench.playing)} title="P">
 						{bench.playing ? 'Pause' : 'Play'}
@@ -228,21 +250,22 @@
 					{#each BUTTONS as name, bit (name)}
 						<span class:held={(bench.held >> bit) & 1}>{name}</span>
 					{/each}
-					<span class="keys">WASD or arrows · Space or Z A · Shift or X B · Enter START · P pause · . step · R restart · M sound</span>
+					<span class="keys">{keys} · P pause · . step · R restart · M sound</span>
 				</div>
 				{#if seen?.stop}<p class="stop">Stopped: {seen.stop}</p>{/if}
+				{#if bench.console && bench.broken}<p class="stop">{bench.broken}</p>{/if}
 			</Panel>
 			<Panel title="Session">
-				{#snippet aside()}seed {bench.started} · {bench.sent} updates · frames hash {seen?.hash ?? '-'}{/snippet}
+				{#snippet aside()}seed {bench.started} · {bench.updates} updates · frames hash {seen?.hash ?? '-'}{/snippet}
 				<div class="session">
-					<button onclick={save} disabled={!bench.sent}>Save</button>
+					<button onclick={save} disabled={!bench.updates}>Save</button>
 					<label class="file">
 						Open…
 						<input type="file" accept=".txt" onchange={(event) => replay(event.currentTarget.files?.[0])} />
 					</label>
-					<button onclick={() => bench.again()} disabled={!bench.sent}>Play again</button>
+					<button onclick={() => bench.again()} disabled={!bench.updates}>Play again</button>
 					{#if bench.replay}
-						<span class="replaying">replaying {bench.sent} of {bench.replay.length}; a key takes over</span>
+						<span class="replaying">replaying {bench.updates} of {bench.replay.length}; a key takes over</span>
 						<button onclick={() => bench.toEnd()}>To the end</button>
 					{:else if bench.seeking !== null}
 						<span class="replaying">running to update {bench.seeking}</span>
@@ -250,14 +273,14 @@
 				</div>
 				<p class="hint">
 					Every update's buttons are kept from the start. A saved session plays again exactly here and headless:
-					<code>bun run cart {called} --seed {bench.started} --frames {bench.sent} --buttons @FILE</code>
+					<code>bun run cart {called} --seed {bench.started} --frames {bench.updates} --buttons @FILE</code>
 					prints the same frames hash. Saving a file in the cart's folder rebuilds it and runs the new build to this update.
 				</p>
 				{#if unread}<p class="stop">{unread}</p>{/if}
 			</Panel>
 			<Panel title="Sound">
 				{#snippet aside()}the four channels over the last 600 updates{/snippet}
-				<Lanes played={bench.played} now={seen?.updates ?? 0} onpick={(picked) => (tone = picked)} />
+				<Lanes played={bench.played} now={bench.updates} ticks={bench.console?.ticks ?? 0} onpick={(picked) => (tone = picked)} />
 				<ToneEditor bind:tone onplay={(played) => sound.strike(wordsOf(played))} />
 				<p class="hint">
 					The tones play through the chip a cabinet plays them through; a cabinet then places the sound where it
@@ -266,7 +289,7 @@
 			</Panel>
 			<Panel title="Meter">
 				{#snippet aside()}units an update spent; the line is a quarter of the budget{/snippet}
-				<Meter spent={bench.spent} budget={seen?.budget ?? 2_000_000} />
+				{#if bench.console}<Meter spent={bench.spent} budget={bench.console.budget} />{/if}
 			</Panel>
 		</div>
 		<div class="column">
@@ -276,10 +299,10 @@
 					<pre class="failed">{failed.message}</pre>
 				</Panel>
 			{/if}
-			{#if bench.cover}
+			{#if bench.cover && bench.console}
 				<Panel title="Cover">
 					{#snippet aside()}what a cabinet shows before anyone plays{/snippet}
-					<Cover cover={bench.cover} />
+					<Cover cover={bench.cover} width={bench.console.width} height={bench.console.height} />
 				</Panel>
 			{/if}
 			<Panel title="Palette">

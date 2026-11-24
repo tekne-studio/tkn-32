@@ -1,0 +1,24 @@
+[package]
+name = "runner"
+description = "The emulator's runner: every cartridge a host runs, on one shelf, as a WebAssembly module of plain imports and exports that any host's engine runs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+# The runner is a WebAssembly module: off wasm32 it is empty.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+cartridge.workspace = true
+cartridge-run.workspace = true
+
+# Its imports and exports are named by hand, which Rust counts as unsafe:
+# it is denied, and allowed in the one file that names them.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -7,12 +7,13 @@
  * to the line's end. What the workbench adds rides in comments.
  */
 
-import { TICKS } from './bench';
-
 /** The buttons by name, a bit each in the contract's order. */
 const NAMES = ['left', 'right', 'up', 'down', 'a', 'b', 'start'];
-/** The longest session read: a day of play. A file is hostile input, and a longer one would only fill the page's memory. */
-export const LONGEST = 24 * 60 * 60 * TICKS;
+/**
+ * The most updates a session read holds, some hours of play: a file is
+ * hostile input, and a longer one would only fill the page's memory.
+ */
+export const LONGEST = 1 << 22;
 
 export interface Session {
 	cart: string;
@@ -77,7 +78,7 @@ export function read(text: string): Partial<Session> & { buttons: number[] } {
 	}
 	const kept = Number(said('updates'));
 	const updates = Number.isInteger(kept) && kept >= 0 ? kept : items.length ? items[items.length - 1][0] + 1 : 0;
-	if (updates > LONGEST) throw new Error(`${updates} updates: a session is at most ${LONGEST}, a day of play`);
+	if (updates > LONGEST) throw new Error(`${updates} updates: a session is at most ${LONGEST}`);
 	const buttons: number[] = [];
 	let at = 0;
 	for (let update = 0; update < updates; update++) {

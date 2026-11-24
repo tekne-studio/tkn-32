@@ -11,14 +11,16 @@
 //! (`cartridge-wasmi`'s `a_kept_file_runs_as_it_always_has`).
 //!
 //! What each session played is kept beside its cart
-//! (`kept/<name>.played.json`): the tones an update, the samples' hash and
-//! how many there are, for the worklet's test
-//! (`crates/chip-worklet/worklet.test.ts`), which plays them as a page
-//! feeds it and holds what it renders to the same hash. A session that
+//! (`kept/<name>.played.json`): its tones as the chip's processor takes
+//! them, one batch from the encoder the emulator sounds through
+//! (`cartridge_run::batch`), the samples' hash and how many there are, for
+//! the worklet's test (`crates/chip-worklet/worklet.test.ts`), which plays
+//! them as a page feeds it and holds what it renders to the same hash. A session that
 //! moves writes them anew with `WRITE_PLAYED=1 cargo test -p headless
 //! --test goldens`.
 
-use cartridge_run::{Frames, WORDS, prepare};
+use cartridge::TICKS;
+use cartridge_run::{Frames, Tone, WORDS, batch, prepare};
 use cartridge_wasmi::Wasmi;
 use headless::{Heard, Script};
 
@@ -92,31 +94,33 @@ fn fingerprint(samples: &[f32]) -> u64 {
 }
 
 /// What a golden's session gives: its frames hash, its samples' hash and
-/// how many samples there are, and the words of each update's tones.
+/// how many samples there are, and each update's tones.
 struct Session {
     frames: String,
     samples: u64,
     length: usize,
-    updates: Vec<Vec<u32>>,
+    updates: Vec<Vec<Tone>>,
 }
 
 impl Session {
-    /// The kept file: one update a line, so a moved tone is one line in a
-    /// diff. The hash is a string, past what a JavaScript number holds.
+    /// The kept file: the batch's rate, then one update a line, its count
+    /// of tones and their words, so a moved tone is one line in a diff. The
+    /// hash is a string, past what a JavaScript number holds.
     fn played(&self) -> String {
-        let updates: Vec<String> = self
-            .updates
-            .iter()
-            .map(|words| {
-                let words: Vec<String> = words.iter().map(u32::to_string).collect();
-                format!("[{}]", words.join(","))
-            })
-            .collect();
+        let batch = batch(TICKS, self.updates.iter().map(Vec::as_slice));
+        let mut lines = vec![batch[0].to_string()];
+        let mut at = 1;
+        while at < batch.len() {
+            let end = at + 1 + batch[at] as usize * WORDS;
+            let words: Vec<String> = batch[at..end].iter().map(u32::to_string).collect();
+            lines.push(words.join(","));
+            at = end;
+        }
         format!(
-            "{{\n\"samples\": \"{:#018X}\",\n\"length\": {},\n\"updates\": [\n{}\n]\n}}\n",
+            "{{\n\"samples\": \"{:#018X}\",\n\"length\": {},\n\"batch\": [\n{}\n]\n}}\n",
             self.samples,
             self.length,
-            updates.join(",\n")
+            lines.join(",\n")
         )
     }
 }
@@ -132,7 +136,7 @@ fn run(golden: &Golden) -> Session {
     for tick in 0..golden.updates {
         let played = cart.update(script.held(tick));
         heard.update(played);
-        updates.push(played.iter().flat_map(|tone| tone.words()).collect());
+        updates.push(played.to_vec());
         frames.add(&cart);
         assert!(cart.stop().is_none(), "{}: stopped at {tick}", golden.name);
     }
@@ -150,7 +154,7 @@ fn each_game_sounds_as_it_always_did() {
     let mut moved = Vec::new();
     for golden in &GOLDENS {
         let session = run(golden);
-        let tones = session.updates.iter().flatten().count() / WORDS;
+        let tones: usize = session.updates.iter().map(Vec::len).sum();
         assert!(
             tones >= 3,
             "{}: a session that sounds, {tones} tones",

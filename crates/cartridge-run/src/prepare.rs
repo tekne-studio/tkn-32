@@ -307,6 +307,65 @@ pub fn prepare(file: &[u8]) -> Result<Prepared, Refusal> {
     })
 }
 
+/// Whether `prepared` has the shape [`prepare`] gives every file it keeps:
+/// `env.tone` its only import, no start section, its meter exported as a
+/// mutable `i32` global and its memory exported. So an engine runs none
+/// of it on loading, and the meter the runner reads and sets is one it
+/// can. It reads what the module declares, never its code: whether every
+/// loop and call pays the meter only preparing makes so, and bytes that
+/// never went through [`prepare`] may run unmetered. A host keeps prepared
+/// bytes only where no one else can write them.
+pub fn shaped(prepared: &[u8]) -> Result<(), Refusal> {
+    let mut globals = Vec::new();
+    let mut meter = None;
+    let mut memory = false;
+    for payload in Parser::new(0).parse_all(prepared) {
+        match payload.map_err(invalid)? {
+            Payload::ImportSection(reader) => {
+                for import in reader {
+                    let import = import.map_err(invalid)?;
+                    if [import.module, import.name] != TONE
+                        || !matches!(import.ty, TypeRef::Func(_))
+                    {
+                        let named = format!("{}.{}", import.module, import.name);
+                        return Err(Refusal::Import(named));
+                    }
+                }
+            }
+            Payload::GlobalSection(reader) => {
+                for global in reader {
+                    globals.push(global.map_err(invalid)?.ty);
+                }
+            }
+            Payload::ExportSection(reader) => {
+                for export in reader {
+                    let export = export.map_err(invalid)?;
+                    match (export.name, export.kind) {
+                        (METER, ExternalKind::Global) => meter = Some(export.index as usize),
+                        (MEMORY, ExternalKind::Memory) => memory = true,
+                        _ => {}
+                    }
+                }
+            }
+            Payload::StartSection { .. } => {
+                return Err(Refusal::Invalid("a start section".to_owned()));
+            }
+            _ => {}
+        }
+    }
+    // Its one import is a function: a global's index is its place in the section.
+    let metered = meter
+        .and_then(|at| globals.get(at))
+        .is_some_and(|ty| ty.mutable && !ty.shared && ty.content_type == wasmparser::ValType::I32);
+    if !metered {
+        return Err(Refusal::Export(METER));
+    }
+    if !memory {
+        return Err(Refusal::Export(MEMORY));
+    }
+    Ok(())
+}
+
 /// What validating a file learns of it.
 struct Survey {
     types: Types,

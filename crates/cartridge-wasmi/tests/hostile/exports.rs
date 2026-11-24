@@ -3,12 +3,9 @@
 //! meter, and nothing of the cartridge's own besides. A name the runner
 //! uses, exported by the cartridge, is dropped for the runner's.
 
-use cartridge_run::{Refusal, prepare};
+use cartridge_run::{Refusal, Stop, prepare};
 
 use crate::support::{assert_runs, assert_stops, cart};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
 
 /// The names a prepared file exports.
 fn exported(file: &[u8]) -> Vec<String> {
@@ -49,7 +46,7 @@ fn a_meter_of_its_own_is_dropped_for_the_runners() {
     let more = r#"(global (export "meter") i32 (i32.const 2147483647))"#;
     let file = cart("(loop $again (br $again))", more, 1);
     assert_eq!(exported(&file), CONTRACT);
-    assert_stops(&file, "Budget", 0);
+    assert_stops(&file, Stop::Budget, 0);
 }
 
 #[test]

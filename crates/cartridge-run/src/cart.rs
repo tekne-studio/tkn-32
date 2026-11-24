@@ -12,6 +12,7 @@ use cartridge::{
 
 use crate::prepare::{OUT_OF_MEMORY, Refusal, TOO_DEEP};
 use crate::tones::Tone;
+use crate::watch::{Ran, Watch};
 
 /// The call trapped. Why is read from the meter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,24 +99,43 @@ pub struct Cart<I> {
     updates: u64,
     spent: u32,
     tones: Vec<Tone>,
+    watch: Option<Box<Watch>>,
 }
 
 impl<I: Instance> Cart<I> {
     /// Runs the start function, checks the contract's version, asks for
     /// the step of its screen and calls `init` with `seed`, all under the
     /// start budget.
-    pub fn start(mut instance: I, seed: u32) -> Cart<I> {
+    pub fn start(instance: I, seed: u32) -> Cart<I> {
         let mut cart = Cart::blank();
-        match Cart::begin(&mut instance, seed) {
-            Err(Trapped) => cart.halt(why(&instance)),
-            Ok(Err(stop)) => cart.halt(stop),
-            Ok(Ok(())) => {
-                instance.take_tones();
-                cart.instance = Some(instance);
-                cart.show();
-            }
-        }
+        cart.begin_on(instance, seed);
         cart
+    }
+
+    /// [`Cart::start`], the cart seen from inside ([`Watch`]) from before
+    /// its first update.
+    pub fn watched(instance: I, seed: u32) -> Cart<I> {
+        let mut cart = Cart::blank();
+        cart.watch = Some(Box::default());
+        cart.begin_on(instance, seed);
+        cart
+    }
+
+    fn begin_on(&mut self, mut instance: I, seed: u32) {
+        let begun = Cart::begin(&mut instance, seed)
+            .map_err(|Trapped| why(&instance))
+            .and_then(|ready| ready)
+            .and_then(|()| {
+                instance.take_tones();
+                self.show(&mut instance)
+            });
+        if let Some(watch) = &mut self.watch {
+            watch.first(&instance);
+        }
+        match begun {
+            Ok(()) => self.instance = Some(instance),
+            Err(stop) => self.halt(stop),
+        }
     }
 
     /// The calls before the first update: a trap, a stop the contract
@@ -161,6 +181,7 @@ impl<I: Instance> Cart<I> {
             updates: 0,
             spent: 0,
             tones: Vec::new(),
+            watch: None,
         }
     }
 
@@ -168,51 +189,74 @@ impl<I: Instance> Cart<I> {
     /// palette read, all under one budget. Gives the tones it played.
     pub fn update(&mut self, buttons: u32) -> &[Tone] {
         self.tones.clear();
-        let Some(instance) = self.instance.as_mut() else {
+        let Some(mut instance) = self.instance.take() else {
             return &self.tones;
         };
+        let buttons = buttons & button::ALL;
         instance.set_meter(UPDATE_BUDGET as i32);
-        if instance
-            .call(Export::Update, buttons & button::ALL)
-            .is_err()
-        {
-            let stop = why(instance);
-            self.halt(stop);
-            return &self.tones;
+        let ran = match instance.call(Export::Update, buttons) {
+            Err(Trapped) => Err(why(&instance)),
+            Ok(_) => {
+                self.tones = instance.take_tones();
+                self.updates += 1;
+                self.show(&mut instance)
+            }
+        };
+        let spent = UPDATE_BUDGET.saturating_sub(instance.meter().max(0) as u32);
+        if let Some(watch) = &mut self.watch {
+            watch.add(Ran {
+                buttons: buttons as u8,
+                spent,
+            });
+            // The engine is let go as the cart stops: what the update wrote
+            // before it is read first.
+            if ran.is_err() {
+                watch.look(&instance);
+            }
         }
-        self.tones = instance.take_tones();
-        self.updates += 1;
-        self.show();
-        if let Some(instance) = &self.instance {
-            self.spent = UPDATE_BUDGET.saturating_sub(instance.meter().max(0) as u32);
+        match ran {
+            Ok(()) => {
+                self.spent = spent;
+                self.instance = Some(instance);
+            }
+            Err(stop) => self.halt(stop),
+        }
+        if let Some(watch) = &mut self.watch {
+            watch
+                .frames_mut()
+                .add_shown(self.screen.pixels(), &self.palette);
         }
         &self.tones
     }
 
-    /// Reads the screen and the palette the cartridge points at.
-    fn show(&mut self) {
-        let Some(instance) = self.instance.as_mut() else {
-            return;
-        };
-        let mut palette = [0; COLOURS * 4];
-        let shown = (|| {
-            let frame = instance.call(Export::Frame, 0)?;
-            let colours = instance.call(Export::Palette, 0)?;
-            Ok(instance.read(frame, self.screen.pixels_mut())
-                && instance.read(colours, &mut palette))
-        })();
-        match shown {
-            Err(Trapped) => {
-                let stop = why(instance);
-                self.halt(stop);
-            }
-            Ok(false) => self.halt(Stop::Screen),
-            Ok(true) => {
-                for (colour, rgba) in self.palette.iter_mut().zip(palette.chunks_exact(4)) {
-                    colour.copy_from_slice(rgba);
-                }
-            }
+    /// Reads the memory again into its [`Watch`], for the updates run since
+    /// the last look to show what they changed; a cart not watched, or one
+    /// stopped, keeps what it had.
+    pub fn look(&mut self) {
+        if let (Some(watch), Some(instance)) = (&mut self.watch, &self.instance) {
+            watch.look(instance);
         }
+    }
+
+    /// What it shows of itself, when it was started [`Cart::watched`].
+    pub fn watch(&self) -> Option<&Watch> {
+        self.watch.as_deref()
+    }
+
+    /// Reads the screen and the palette the cartridge points at.
+    fn show(&mut self, instance: &mut I) -> Result<(), Stop> {
+        let frame = instance.call(Export::Frame, 0);
+        let colours = frame.and_then(|frame| Ok((frame, instance.call(Export::Palette, 0)?)));
+        let (frame, colours) = colours.map_err(|Trapped| why(instance))?;
+        let mut palette = [0; COLOURS * 4];
+        if !(instance.read(frame, self.screen.pixels_mut()) && instance.read(colours, &mut palette))
+        {
+            return Err(Stop::Screen);
+        }
+        for (colour, rgba) in self.palette.iter_mut().zip(palette.chunks_exact(4)) {
+            colour.copy_from_slice(rgba);
+        }
+        Ok(())
     }
 
     /// Stops for good: the engine is let go and the screen says why.
@@ -255,11 +299,15 @@ impl<I: Instance> Cart<I> {
     }
 
     /// The screen in colour, four bytes a pixel, row by row from the top
-    /// left; a pixel names a colour by its low five bits.
+    /// left, as [`crate::resolve`] draws it.
     pub fn rgba(&self, into: &mut [u8]) {
-        for (pixel, &index) in into.chunks_exact_mut(4).zip(self.screen.pixels()) {
-            pixel.copy_from_slice(&self.palette[usize::from(index) % COLOURS]);
-        }
+        crate::colour::rgba(self.screen.pixels(), &self.palette, into);
+    }
+
+    /// What a host draws the screen from, [`crate::SHOWN_BYTES`] into
+    /// `into`: the palette resolved, then the pixels.
+    pub fn shown(&self, into: &mut [u8]) {
+        crate::colour::shown(self.screen.pixels(), &self.palette, into);
     }
 }
 

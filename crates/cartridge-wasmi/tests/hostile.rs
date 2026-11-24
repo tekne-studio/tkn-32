@@ -1,12 +1,9 @@
 //! Cartridges written to break the contract, one file a way of attack: the
-//! contract's proof. Each case runs on wasmi and, once prepared, on every
-//! browser engine at hand, and each stops the same way after the same
-//! update on all of them. A new finding lands here as a case.
-//!
-//! Natively the browser engines are node and bun, as processes. Built to
-//! WebAssembly, it is `cartridge-web`'s test too, and the engine is the
-//! host's own through `Browser`: each case file says `test` is
-//! wasm-bindgen-test's there.
+//! contract's proof. Each case runs on wasmi and through the emulator on
+//! every JavaScript engine at hand, node, bun and SpiderMonkey, as
+//! processes, and each stops the same way after the same update on all of
+//! them. Each is kept among the emulator's cases, which hold any other host
+//! to the same runs. A new finding lands here as a case.
 //!
 //! - `time`: work past the budget, in every shape the meter prices
 //! - `memory`: memory past the ceiling, or written where it is not
@@ -16,6 +13,7 @@
 //! - `exports`: a way out, or in, by an export
 //! - `start`: a way past the runner by a start function
 //! - `pointers`: a screen or a palette that lies
+//! - `prepared`: bytes kept as prepared that preparing never gave
 //! - `malformed`: files that are not cartridges, whole or cut
 //! - `cover`: a cover's section that lies, read before anything runs
 
@@ -34,6 +32,8 @@ mod malformed;
 mod memory;
 #[path = "hostile/pointers.rs"]
 mod pointers;
+#[path = "hostile/prepared.rs"]
+mod prepared;
 #[path = "hostile/stack.rs"]
 mod stack;
 #[path = "hostile/start.rs"]

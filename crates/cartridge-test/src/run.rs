@@ -1,36 +1,39 @@
-//! What a run of a cartridge comes to, on any engine: the hash of every
-//! frame it showed and of every tone it played, why it stopped and the
-//! updates it ran.
+//! What a run of a cartridge comes to, on any engine and through any host:
+//! the hash of every frame it showed and of every tone it played, why it
+//! stopped, the updates it ran, and its last screen in the colours a host
+//! draws.
 
 use std::fmt;
 
+use cartridge::PIXELS;
 use cartridge_run::{Cart, Instance};
 use cartridge_wasmi::Wasmi;
 
 /// What a run came to: the hash of every frame shown after an update, the
 /// hash of every tone kept, in `env.tone`'s words, why it stopped, if it
-/// did, and the updates it ran.
+/// did, the updates it ran, and the hash of its last screen in colour.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Run {
     pub hash: u32,
     pub tones: u32,
-    /// `running`, or the stop as `Stop`'s `Debug` writes it.
+    /// `running`, or why it stopped, as its screen says it.
     pub stop: String,
     pub updates: u64,
+    pub rgba: u32,
 }
 
 impl fmt::Display for Run {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{:08x} {:08x} {} {}",
-            self.hash, self.tones, self.stop, self.updates
+            "{:08x} {:08x} {} {} {:08x}",
+            self.hash, self.tones, self.stop, self.updates, self.rgba
         )
     }
 }
 
-/// FNV-1a over 32 bits, as `cart.mjs` hashes.
-fn fnv(hash: u32, bytes: &[u8]) -> u32 {
+/// FNV-1a over 32 bits, as `run.mjs` hashes.
+pub fn fnv(hash: u32, bytes: &[u8]) -> u32 {
     bytes.iter().fold(hash, |hash, &byte| {
         (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
     })
@@ -63,13 +66,16 @@ pub fn run<I: Instance>(mut cart: Cart<I>, buttons: &[u32]) -> Run {
             hash = fnv(hash, cart.palette().as_flattened());
         }
     }
+    let mut rgba = vec![0; PIXELS * 4];
+    cart.rgba(&mut rgba);
     Run {
         hash,
         tones,
         stop: cart
             .stop()
-            .map_or_else(|| "running".to_owned(), |stop| format!("{stop:?}")),
+            .map_or_else(|| "running".to_owned(), ToString::to_string),
         updates: cart.updates(),
+        rgba: fnv(0x811c_9dc5, &rgba),
     }
 }
 

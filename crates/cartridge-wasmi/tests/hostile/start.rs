@@ -4,10 +4,9 @@
 //! the start budget it shares with `cart_abi` and `init`, so it stops as
 //! anything else would.
 
-use crate::support::{assert_runs, assert_stops};
+use cartridge_run::Stop;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
+use crate::support::{assert_runs, assert_stops};
 
 /// A cartridge whose start function and `init` run `start` and `init`.
 fn starting(start: &str, init: &str) -> Vec<u8> {
@@ -47,18 +46,18 @@ fn a_start_function_runs_before_init() {
 
 #[test]
 fn a_start_function_that_never_ends_is_over_its_budget() {
-    assert_stops(&starting("(loop $again (br $again))", ""), "Budget", 0);
+    assert_stops(&starting("(loop $again (br $again))", ""), Stop::Budget, 0);
 }
 
 #[test]
 fn a_start_function_stops_as_anything_else_would() {
-    assert_stops(&starting("(call $start)", ""), "Stack", 0);
+    assert_stops(&starting("(call $start)", ""), Stop::Stack, 0);
     assert_stops(
         &starting("(drop (memory.grow (i32.const 1000)))", ""),
-        "Memory",
+        Stop::Memory,
         0,
     );
-    assert_stops(&starting("unreachable", ""), "Trap", 0);
+    assert_stops(&starting("unreachable", ""), Stop::Trap, 0);
 }
 
 #[test]
@@ -69,7 +68,7 @@ fn the_start_budget_is_the_start_functions_and_inits_together() {
     assert_runs(&starting(&fills(1000), &fills(1000)), 1);
     // Three thousand in each are over it, though either alone is not.
     assert_runs(&starting(&fills(3000), ""), 1);
-    assert_stops(&starting(&fills(3000), &fills(3000)), "Budget", 0);
+    assert_stops(&starting(&fills(3000), &fills(3000)), Stop::Budget, 0);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! What a cartridge plays through `env.tone`, as each engine's import
-//! hears it and the contract keeps it, and how what a shelf's carts played
-//! crosses, an update at a time, to the host that sounds it.
+//! hears it and the contract keeps it, and the message that carries what a
+//! cart played, an update at a time, to the chip that sounds it.
 
 use cartridge::{CHANNELS, LOUDEST, MAX_TONES, wave};
 
@@ -65,54 +65,18 @@ impl Tone {
 /// How many words a tone is: `env.tone`'s seven.
 pub const WORDS: usize = 7;
 
-/// What one cart played in one update, in the order played. An update that
-/// played nothing is one too: a player lays each update one after the
-/// other, so the tones keep the time the game played them in.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Played {
-    /// The cart's name on its shelf.
-    pub cart: u32,
-    pub tones: Vec<Tone>,
-}
-
-/// Updates played, as plain words: how they cross from a worker that runs
-/// the carts to the host that sounds them. Each update is its cart's
-/// name, how many tones, then each tone's [`WORDS`].
-pub fn played_words(played: &[Played]) -> Vec<u32> {
-    let mut words = Vec::new();
-    for update in played {
-        words.extend([update.cart, update.tones.len() as u32]);
-        words.extend(update.tones.iter().flat_map(Tone::words));
+/// What a cart played over some updates, as one message to the arcade's
+/// chip (`chip-worklet`'s processor): how many updates a second to lay them
+/// at, 0 to play them all at once, then each update's count of tones and
+/// their [`WORDS`]. An update that played nothing is one too, so the tones
+/// keep the time the game played them in.
+pub fn batch<'a>(per_second: u32, updates: impl IntoIterator<Item = &'a [Tone]>) -> Vec<u32> {
+    let mut words = vec![per_second];
+    for tones in updates {
+        words.push(tones.len() as u32);
+        words.extend(tones.iter().flat_map(Tone::words));
     }
     words
-}
-
-/// The updates in [`played_words`], up to the first that cannot be read: one
-/// cut short or saying more tones than an update plays. A tone the contract
-/// does not play is left out of its update.
-pub fn played_from_words(words: &[u32]) -> Vec<Played> {
-    let mut played = Vec::new();
-    let mut rest = words;
-    while let [cart, count, after @ ..] = rest {
-        let count = *count as usize;
-        if count > MAX_TONES || after.len() < count * WORDS {
-            break;
-        }
-        let (tones, after) = after.split_at(count * WORDS);
-        let tones = tones
-            .chunks_exact(WORDS)
-            .filter_map(|tone| {
-                let &[channel, hz, ms, wave, to_hz, loud, to_loud] = tone else {
-                    return None;
-                };
-                kept(channel, wave)
-                    .then(|| Tone::new(channel as u8, hz, ms, wave as u8, to_hz, loud, to_loud))
-            })
-            .collect();
-        played.push(Played { cart: *cart, tones });
-        rest = after;
-    }
-    played
 }
 
 /// Whether a tone on `channel` in `wave` is one the contract plays.
@@ -125,11 +89,16 @@ fn kept(channel: u32, wave: u32) -> bool {
 #[derive(Debug, Default)]
 pub struct Tones {
     heard: Vec<Tone>,
+    /// The calls heard: the first [`MAX_TONES`] count, kept or dropped, so
+    /// a host that hears a game apart from the runner hands over that many
+    /// calls an update and keeps no rule of its own.
+    calls: usize,
 }
 
 impl Tones {
-    /// Keeps a tone the contract allows, up to [`MAX_TONES`] an update; a
-    /// channel or a wave outside the contract's is dropped.
+    /// Keeps a tone the contract allows among the first [`MAX_TONES`] calls
+    /// of an update; a call past them, or of a channel or a wave outside the
+    /// contract's, is dropped.
     #[allow(clippy::too_many_arguments)]
     pub fn hear(
         &mut self,
@@ -141,7 +110,11 @@ impl Tones {
         loud: u32,
         to_loud: u32,
     ) {
-        if self.heard.len() < MAX_TONES && kept(channel, wave) {
+        if self.calls == MAX_TONES {
+            return;
+        }
+        self.calls += 1;
+        if kept(channel, wave) {
             let tone = Tone::new(channel as u8, hz, ms, wave as u8, to_hz, loud, to_loud);
             self.heard.push(tone);
         }
@@ -149,6 +122,7 @@ impl Tones {
 
     /// Hands over what was heard, and starts again empty.
     pub fn take(&mut self) -> Vec<Tone> {
+        self.calls = 0;
         std::mem::take(&mut self.heard)
     }
 }
@@ -158,45 +132,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn updates_cross_as_words_and_only_tones_come_back() {
-        let tone = Tone::new(3, 880, 120, wave::SAW as u8, 220, 200, 0);
-        let played = [
-            Played {
-                cart: 7,
-                tones: vec![tone, Tone::steady(0, 0, 50, 0)],
-            },
-            Played {
-                cart: 7,
-                tones: vec![],
-            },
-            Played {
-                cart: 9,
-                tones: vec![tone],
-            },
-        ];
-        let words = played_words(&played);
-        assert_eq!(played_from_words(&words), played);
-        let mut strange = words.clone();
-        strange.extend([1, 2, CHANNELS, 880, 120, 0, 880, 255, 255]);
-        strange.extend([0, 880, 120, wave::COUNT, 880, 255, 255]);
-        let read = played_from_words(&strange);
-        assert_eq!(read[..3], played);
-        let left_out = Played {
-            cart: 1,
-            tones: vec![],
-        };
-        assert_eq!(read[3], left_out, "its tones left out");
-        let mut cut = words.clone();
-        cut.extend([1, 1, 0, 880, 120]);
-        assert_eq!(played_from_words(&cut), played, "an update cut short");
-        let mut many = words;
-        many.extend([1, MAX_TONES as u32 + 1]);
-        many.extend(vec![0; (MAX_TONES + 1) * WORDS]);
-        assert_eq!(
-            played_from_words(&many),
-            played,
-            "more than an update plays"
-        );
+    fn a_batch_lays_each_update_with_its_count_of_tones() {
+        let boom = Tone::new(3, 880, 120, wave::SAW as u8, 220, 200, 0);
+        let hush = Tone::steady(0, 0, 50, 0);
+        let updates: [&[Tone]; 3] = [&[boom, hush], &[], &[boom]];
+        let mut words = vec![60, 2];
+        words.extend(boom.words());
+        words.extend(hush.words());
+        words.extend([0, 1]);
+        words.extend(boom.words());
+        assert_eq!(batch(60, updates), words);
+        assert_eq!(batch(0, []), [0], "nothing to lay");
     }
 
     #[test]

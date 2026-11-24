@@ -5,11 +5,9 @@
 //! charged to the update.
 
 use cartridge::{COLOURS, PIXELS};
+use cartridge_run::Stop;
 
 use crate::support::{assert_runs, assert_stops};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
 
 const PAGE: i64 = 65536;
 const COLOURS_BYTES: i64 = COLOURS as i64 * 4;
@@ -38,14 +36,14 @@ fn at(at: i64) -> String {
 fn a_screen_to_the_last_byte_runs_and_one_past_stops() {
     let last = PAGE - PIXELS as i64;
     assert_runs(&pointing(&at(last), &at(0)), 2);
-    assert_stops(&pointing(&at(last + 1), &at(0)), "Screen", 0);
+    assert_stops(&pointing(&at(last + 1), &at(0)), Stop::Screen, 0);
 }
 
 #[test]
 fn a_palette_to_the_last_byte_runs_and_one_past_stops() {
     let last = PAGE - COLOURS_BYTES;
     assert_runs(&pointing(&at(4096), &at(last)), 2);
-    assert_stops(&pointing(&at(4096), &at(last + 1)), "Screen", 0);
+    assert_stops(&pointing(&at(4096), &at(last + 1)), Stop::Screen, 0);
 }
 
 #[test]
@@ -59,8 +57,8 @@ fn pointers_past_any_memory_stop_it() {
         u32::MAX as i64 - COLOURS_BYTES + 1,
         PAGE,
     ] {
-        assert_stops(&pointing(&at(lie), &at(0)), "Screen", 0);
-        assert_stops(&pointing(&at(4096), &at(lie)), "Screen", 0);
+        assert_stops(&pointing(&at(lie), &at(0)), Stop::Screen, 0);
+        assert_stops(&pointing(&at(4096), &at(lie)), Stop::Screen, 0);
     }
 }
 
@@ -68,13 +66,13 @@ fn pointers_past_any_memory_stop_it() {
 fn a_screen_that_moves_out_stops_at_the_update_it_moved() {
     let moves = "(if (result i32) (i32.lt_u (global.get $n) (i32.const 3))
         (then (i32.const 4096)) (else (i32.const 65000)))";
-    assert_stops(&pointing(moves, &at(0)), "Screen", 3);
+    assert_stops(&pointing(moves, &at(0)), Stop::Screen, 3);
 }
 
 #[test]
 fn a_screen_that_takes_work_to_find_is_charged_or_stops() {
     let forever = "(loop $again (br $again)) (i32.const 0)";
-    assert_stops(&pointing(forever, &at(0)), "Budget", 0);
-    assert_stops(&pointing(&at(4096), forever), "Budget", 0);
-    assert_stops(&pointing("unreachable", &at(0)), "Trap", 0);
+    assert_stops(&pointing(forever, &at(0)), Stop::Budget, 0);
+    assert_stops(&pointing(&at(4096), forever), Stop::Budget, 0);
+    assert_stops(&pointing("unreachable", &at(0)), Stop::Trap, 0);
 }

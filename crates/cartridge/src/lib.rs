@@ -133,7 +133,8 @@ pub const MAX_STACK: u32 = 16_384;
 
 /// The channels a cartridge plays tones on.
 pub const CHANNELS: u32 = 4;
-/// The tones one update may play; a runner drops the rest.
+/// The calls to `env.tone` one update may make; a runner drops the rest,
+/// and of these, a tone outside the contract's channels or waves.
 pub const MAX_TONES: usize = 16;
 /// The most a tone's loudness is, and a steady [`tone`]'s: a louder one is
 /// held to it.
@@ -214,6 +215,16 @@ pub mod button {
     pub const START: u32 = 1 << 6;
     /// Every button the contract names; a runner sends no other bit.
     pub const ALL: u32 = (1 << 7) - 1;
+    /// Each button by its name, in the order of its bit.
+    pub const NAMED: [(&str, u32); 7] = [
+        ("left", LEFT),
+        ("right", RIGHT),
+        ("up", UP),
+        ("down", DOWN),
+        ("a", A),
+        ("b", B),
+        ("start", START),
+    ];
 }
 
 /// The waves a tone is played in.

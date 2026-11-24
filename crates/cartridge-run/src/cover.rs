@@ -4,7 +4,7 @@
 //! file to the one section that holds it.
 
 use cartridge::cover::SECTION;
-use cartridge::{COLOURS, Cover, HEIGHT, MAX_FILE, PIXELS, Palette, Screen, WIDTH};
+use cartridge::{Cover, HEIGHT, MAX_FILE, PIXELS, Palette, Screen, WIDTH};
 use wasmparser::{Encoding, Parser, Payload};
 
 use crate::cart::{INK, host_screen};
@@ -70,13 +70,12 @@ pub fn cover_screen(cover: Option<&Cover>, name: &str) -> (Palette, Box<Screen>)
 }
 
 /// [`cover_screen`] in colour, four bytes a pixel, `WIDTH` by `HEIGHT`,
-/// row by row from the top left: a texture's pixels.
+/// row by row from the top left, as [`crate::resolve`] draws it: a
+/// texture's pixels.
 pub fn cover_rgba(cover: Option<&Cover>, name: &str) -> Vec<u8> {
     let (palette, screen) = cover_screen(cover, name);
-    let mut rgba = Vec::with_capacity(PIXELS * 4);
-    for &index in screen.pixels() {
-        rgba.extend_from_slice(&palette[usize::from(index) % COLOURS]);
-    }
+    let mut rgba = vec![0; PIXELS * 4];
+    crate::colour::rgba(screen.pixels(), &palette, &mut rgba);
     rgba
 }
 

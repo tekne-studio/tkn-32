@@ -3,26 +3,23 @@
 //! segment that could not be written is refused before any engine sees it.
 
 use cartridge::MAX_MEMORY;
-use cartridge_run::{Refusal, prepare};
+use cartridge_run::{Refusal, Stop, prepare};
 
 use crate::support::{assert_runs, assert_stops, cart};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
 
 const PAGES: u32 = (MAX_MEMORY / 65536) as u32;
 
 #[test]
 fn growing_past_the_ceiling_in_a_loop() {
     let grows = "(loop $again (drop (memory.grow (i32.const 1))) (br $again))";
-    assert_stops(&cart(grows, "", 1), "Memory", 0);
+    assert_stops(&cart(grows, "", 1), Stop::Memory, 0);
 }
 
 #[test]
 fn growing_past_the_ceiling_at_once() {
     assert_stops(
         &cart("(drop (memory.grow (i32.const 1000)))", "", 1),
-        "Memory",
+        Stop::Memory,
         0,
     );
 }
@@ -48,7 +45,7 @@ fn a_maximum_declared_past_the_ceiling_is_the_ceiling() {
         PAGES * 4
     ))
     .unwrap();
-    assert_stops(&file, "Memory", 0);
+    assert_stops(&file, Stop::Memory, 0);
 }
 
 #[test]
@@ -62,13 +59,13 @@ fn a_memory_that_starts_past_the_ceiling_is_refused() {
 #[test]
 fn a_store_past_the_end_traps() {
     let store = "(i32.store (i32.const 65534) (i32.const 1))";
-    assert_stops(&cart(store, "", 1), "Trap", 0);
+    assert_stops(&cart(store, "", 1), Stop::Trap, 0);
 }
 
 #[test]
 fn a_copy_from_a_segment_past_its_end_traps() {
     let init = "(memory.init $note (i32.const 0) (i32.const 2) (i32.const 8))";
-    assert_stops(&cart(init, r#"(data $note "abc")"#, 1), "Trap", 0);
+    assert_stops(&cart(init, r#"(data $note "abc")"#, 1), Stop::Trap, 0);
 }
 
 #[test]

@@ -60,7 +60,8 @@
 			context.fillRect(i % COLUMNS, Math.floor(i / COLUMNS), 1, 1);
 		});
 		context.globalAlpha = 1;
-		const block = seen?.block ?? 256;
+		const block = bench.console?.block;
+		if (!block) return;
 		const first = Math.floor(bench.at / block);
 		context.strokeStyle = style.getPropertyValue('--accent');
 		context.fillStyle = style.getPropertyValue('--accent');
@@ -73,7 +74,7 @@
 		const box = map.getBoundingClientRect();
 		const x = Math.floor(((event.clientX - box.left) / box.width) * COLUMNS);
 		const y = Math.floor(((event.clientY - box.top) / box.height) * map.height);
-		bench.show((y * COLUMNS + x) * (seen?.block ?? 256));
+		bench.show((y * COLUMNS + x) * (bench.console?.block ?? 0));
 	}
 
 	function go(event: SubmitEvent) {

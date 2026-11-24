@@ -70,14 +70,3 @@ export function parse(text: string): Tone | null {
 	const [channel, hz, ms, wave, toHz = hz, loud = LOUDEST, toLoud = LOUDEST] = numbers;
 	return { channel, hz, ms, wave, toHz, loud, toLoud };
 }
-
-/**
- * Updates as the chip's worklet takes them (`crates/chip-worklet/worklet.js`),
- * one flat array: the updates a second (0 plays them all at once), then
- * each update's count of tones and their words.
- */
-export function batch(updates: number[][], perSecond: number): Uint32Array {
-	const words = [Math.round(perSecond)];
-	for (const tones of updates) words.push(tones.length / WORDS, ...tones);
-	return Uint32Array.from(words);
-}

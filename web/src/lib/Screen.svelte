@@ -1,13 +1,16 @@
 <script lang="ts">
-	import { HEIGHT, WIDTH } from './bench';
-
 	let {
+		width,
+		height,
 		rgba,
 		indices,
 		colours,
 		scale,
 		pointed = $bindable()
 	}: {
+		/** The console's screen, in pixels. */
+		width: number;
+		height: number;
 		rgba: ArrayBuffer | undefined;
 		indices: ArrayBuffer | undefined;
 		/** How many colours the palette holds: a pixel's index names one of them. */
@@ -22,28 +25,28 @@
 
 	$effect(() => {
 		if (!rgba) return;
-		const pixels = new ImageData(new Uint8ClampedArray(rgba.slice(0)), WIDTH, HEIGHT);
+		const pixels = new ImageData(new Uint8ClampedArray(rgba.slice(0)), width, height);
 		canvas.getContext('2d')!.putImageData(pixels, 0, 0);
 	});
 
 	$effect(() => {
-		pointed = at && indices ? { ...at, index: new Uint8Array(indices)[at.y * WIDTH + at.x] % colours } : null;
+		pointed = at && indices ? { ...at, index: new Uint8Array(indices)[at.y * width + at.x] % colours } : null;
 	});
 
 	function point(event: PointerEvent) {
 		const box = canvas.getBoundingClientRect();
-		const x = Math.floor(((event.clientX - box.left) / box.width) * WIDTH);
-		const y = Math.floor(((event.clientY - box.top) / box.height) * HEIGHT);
-		at = x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT ? { x, y } : null;
+		const x = Math.floor(((event.clientX - box.left) / box.width) * width);
+		const y = Math.floor(((event.clientY - box.top) / box.height) * height);
+		at = x >= 0 && x < width && y >= 0 && y < height ? { x, y } : null;
 	}
 </script>
 
 <canvas
 	bind:this={canvas}
-	width={WIDTH}
-	height={HEIGHT}
-	style:width="{WIDTH * scale}px"
-	style:height="{HEIGHT * scale}px"
+	width={width}
+	height={height}
+	style:width="{width * scale}px"
+	style:height="{height * scale}px"
 	onpointermove={point}
 	onpointerleave={() => (at = null)}
 ></canvas>

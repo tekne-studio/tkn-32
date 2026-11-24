@@ -1,18 +1,22 @@
 // The worklet plays each tone on the sample the game played it, as a page
 // feeds it: every golden session of the console (`crates/headless/tests/
-// goldens.rs`, which keeps what each played beside its cart) sent in the
-// batches a page's frames make, slow and fast, late and jittered, rendered
+// goldens.rs`, which keeps what each played beside its cart, one batch from
+// the emulator's encoder) sent in the batches a page's frames make, each
+// cut from it at the updates' bounds, slow and fast, late and jittered, rendered
 // in the audio thread's blocks on a clock of its own, gives every sample
 // the headless runner gives, at 48 kHz to its kept hash and at 44.1 kHz
-// to the chip rendered there update by update. The chip's module is built
-// by `bun scripts/check.ts`, or `cargo build --release --target
-// wasm32-unknown-unknown -p chip-worklet`.
+// to the chip rendered there update by update. It plays the files a page
+// loads, the chip and the processor of the console's build of the emulator
+// (`bun scripts/emulator.ts`, which `bun scripts/check.ts` runs first).
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
-import { batch } from '../../web/src/lib/tone';
+import { EMULATOR } from '../../scripts/emulator';
 
 const ROOT = `${import.meta.dir}/../..`;
-const MODULE = `${ROOT}/target/wasm32-unknown-unknown/release/chip_worklet.wasm`;
+const MANIFEST = `${EMULATOR}/emulator.json`;
+if (!existsSync(MANIFEST)) throw new Error(`no emulator built in ${EMULATOR}: bun scripts/emulator.ts`);
+/** The emulator's chip and processor, by the names its manifest gives them. */
+const { chip, processor }: { chip: string; processor: string } = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const KEPT = `${ROOT}/crates/headless/tests/kept`;
 const GOLDENS = ['rocks', 'dot', 'boom', 'hues'];
 /** The rate the headless runner hears at, and its goldens are hashed at. */
@@ -25,9 +29,18 @@ const WORDS = 7;
 /** Never further ahead than this, in seconds: the lead, the slack and a batch of four updates. */
 const FAR = 0.03 + 0.04 + CATCH_UP / UPDATES_A_SECOND;
 
+interface Kept {
+	samples: string;
+	length: number;
+	/** Its rate, then each update's count of tones and their words. */
+	batch: number[];
+}
+
+/** A session's tones, each update's part of the kept batch, its count first. */
 interface Played {
 	samples: string;
 	length: number;
+	rate: number;
 	updates: number[][];
 }
 
@@ -74,9 +87,21 @@ scope.AudioWorkletProcessor = class {
 scope.registerProcessor = (_: string, processor: typeof Worklet) => (Worklet = processor);
 scope.sampleRate = HEADLESS;
 scope.currentFrame = 0;
-await import('./worklet.js');
+await import(`${EMULATOR}/${processor}`);
 
-const read = (name: string): Played => JSON.parse(readFileSync(`${KEPT}/${name}.played.json`, 'utf8'));
+function read(name: string): Played {
+	const { samples, length, batch }: Kept = JSON.parse(readFileSync(`${KEPT}/${name}.played.json`, 'utf8'));
+	const updates: number[][] = [];
+	for (let at = 1; at < batch.length; ) {
+		const end = at + 1 + batch[at] * WORDS;
+		updates.push(batch.slice(at, end));
+		at = end;
+	}
+	return { samples, length, rate: batch[0], updates };
+}
+
+/** The batch of `updates`, each a part of the kept one, at the kept rate. */
+const batch = (played: Played, updates: number[][]) => Uint32Array.from([played.rate, ...updates.flat()]);
 
 
 /** FNV-1a, 64 bits, over the samples' bytes, as goldens.rs hashes them. */
@@ -107,8 +132,8 @@ function reference(module: Uint8Array, played: Played, rate: number): Float32Arr
 			done += len;
 		}
 	};
-	for (const words of played.updates) {
-		for (let at = 0; at < words.length; at += WORDS) chip.play(...words.slice(at, at + WORDS));
+	for (const update of played.updates) {
+		for (let at = 1; at < update.length; at += WORDS) chip.play(...update.slice(at, at + WORDS));
 		render(rate / UPDATES_A_SECOND);
 	}
 	render(out.length - done);
@@ -135,7 +160,7 @@ function worklet(module: Uint8Array, played: Played, rate: number, page: Page): 
 		const owed = Math.min(Math.floor((ms * UPDATES_A_SECOND) / 1000), played.updates.length) - ran;
 		const count = Math.min(owed, CATCH_UP);
 		if (count <= 0) continue;
-		batches.push({ atMs: ms + 20, played: batch(played.updates.slice(ran, ran + count), UPDATES_A_SECOND) });
+		batches.push({ atMs: ms + 20, played: batch(played, played.updates.slice(ran, ran + count)) });
 		ran += owed;
 	}
 	const out = new Float32Array(Math.ceil(((ms / 1000) * rate) + played.length * (rate / HEADLESS)) + rate);
@@ -205,8 +230,8 @@ function run(module: Uint8Array, played: Played, { seconds, ppm, waited = 0, fro
 	const result: Hour = { sent: 0, played: 0, ordered: true, furthest: 0, settled: 0 };
 	const send = (frame: number, ran: number, count: number) => {
 		const updates = Array.from({ length: count }, (_, k) => played.updates[(from + ran + k) % played.updates.length]);
-		result.sent += updates.reduce((tones, words) => tones + words.length / WORDS, 0);
-		processor.port.onmessage({ data: batch(updates, UPDATES_A_SECOND) });
+		result.sent += updates.reduce((tones, update) => tones + update[0], 0);
+		processor.port.onmessage({ data: batch(played, updates) });
 		const { at, head, count: waiting } = processor;
 		for (let k = 1; k < waiting; k++) {
 			if (at[(head + k) % ring] < at[(head + k - 1) % ring]) result.ordered = false;
@@ -245,8 +270,7 @@ function heard(out: Float32Array, reference: Float32Array): Float32Array {
 }
 
 describe('the worklet', () => {
-	if (!existsSync(MODULE)) throw new Error(`no ${MODULE}: cargo build --release --target wasm32-unknown-unknown -p chip-worklet`);
-	const module = readFileSync(MODULE);
+	const module = readFileSync(`${EMULATOR}/${chip}`);
 
 	for (const name of GOLDENS) {
 		const played = read(name);

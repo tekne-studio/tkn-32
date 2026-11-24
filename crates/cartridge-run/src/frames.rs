@@ -2,6 +2,8 @@
 //! workbench and its headless runner print the same one for the same seed
 //! and buttons.
 
+use cartridge::{PIXELS, Palette};
+
 use crate::{Cart, Instance};
 
 /// FNV-1a, 64 bits.
@@ -25,7 +27,11 @@ impl Default for Frames {
 impl Frames {
     /// Adds what `cart` shows after an update.
     pub fn add<I: Instance>(&mut self, cart: &Cart<I>) {
-        for &byte in cart.screen().iter().chain(cart.palette().as_flattened()) {
+        self.add_shown(cart.screen(), cart.palette());
+    }
+
+    pub(crate) fn add_shown(&mut self, screen: &[u8; PIXELS], palette: &Palette) {
+        for &byte in screen.iter().chain(palette.as_flattened()) {
             self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(FNV_PRIME);
         }
     }

@@ -3,13 +3,12 @@
 
 use cartridge::{MAX_FRAME, UPDATE_BUDGET};
 
+use cartridge_run::Stop;
+
 use crate::support::{assert_runs, assert_stops, cart};
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
-
 fn over_budget(update: &str, more: &str) {
-    assert_stops(&cart(update, more, 1), "Budget", 0);
+    assert_stops(&cart(update, more, 1), Stop::Budget, 0);
 }
 
 #[test]
@@ -103,7 +102,7 @@ fn declared_locals_are_charged_at_each_call() {
     let locals = MAX_FRAME - 1;
     let fit = UPDATE_BUDGET / locals;
     assert_runs(&fat_calls(locals, fit * 9 / 10), 2);
-    assert_stops(&fat_calls(locals, fit + 1), "Budget", 0);
+    assert_stops(&fat_calls(locals, fit + 1), Stop::Budget, 0);
 }
 
 #[test]

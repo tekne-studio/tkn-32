@@ -6,3 +6,6 @@ node_modules/
 
 # What `bun run cart` writes
 out/
+
+# What `bun run setup` downloads
+.tools/

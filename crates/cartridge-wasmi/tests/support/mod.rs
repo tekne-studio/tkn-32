@@ -1,19 +1,11 @@
 //! What the tests of a cartridge's runner share: a cartridge written by
-//! hand, and its run on every engine at hand. Natively the browser engines
-//! at hand are processes (`cartridge_test::on_every_engine`); built to
-//! WebAssembly, the one the tests run in (`host.rs`). Each test binary uses
-//! a part.
+//! hand, and its run on wasmi and through every host of the emulator at
+//! hand (`cartridge_test::on_every_engine`). Each test binary uses a part.
 #![allow(dead_code, unused_imports)]
 
-#[cfg(target_arch = "wasm32")]
-#[path = "host.rs"]
-mod host;
+pub use cartridge_test::{Run, emulator, fnv, on_every_engine, on_wasmi, part};
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use cartridge_test::on_every_engine;
-pub use cartridge_test::{Run, on_wasmi};
-#[cfg(target_arch = "wasm32")]
-pub use host::on_every_engine;
+use cartridge_run::Stop;
 
 /// A cartridge that keeps the contract, with `update`'s body, `more`
 /// fields in the module and `memory` pages, as WebAssembly text. Its screen
@@ -40,10 +32,14 @@ pub fn cart(update: &str, more: &str, memory: u32) -> Vec<u8> {
 }
 
 /// Asserts `file` stops as `stop`, after `after` updates, on every engine.
-pub fn assert_stops(file: &[u8], stop: &str, after: u64) {
+pub fn assert_stops(file: &[u8], stop: Stop, after: u64) {
     let buttons = vec![0; after as usize + 2];
     let run = on_every_engine(file, 1, &buttons);
-    assert_eq!((run.stop.as_str(), run.updates), (stop, after), "{run}");
+    assert_eq!(
+        (&run.stop, run.updates),
+        (&stop.to_string(), after),
+        "{run}"
+    );
 }
 
 /// Asserts `file` runs `updates` updates on every engine without stopping.

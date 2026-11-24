@@ -2,9 +2,9 @@
 //! ([`prepare`]: the limits, the exports cut to the contract's, a meter of
 //! work and a count of the stack written into its code), then instantiated
 //! on an engine behind [`Instance`] and held to the contract by [`Cart`],
-//! and kept running by a clock on a [`Shelf`].
-//! The native engine is wasmi, in `cartridge-wasmi`; the browser's own
-//! `WebAssembly` is the other, in `cartridge-web`.
+//! and kept running by a clock on a [`Shelf`]. The emulator's runner runs
+//! it on a host's engine, whatever the host; `cartridge-wasmi` runs it on
+//! wasmi, the suites' reference.
 //!
 //! What it refuses, at preparation: a file over `cartridge::MAX_FILE`; one
 //! the validator refuses, which takes WebAssembly 2.0 without SIMD (so no
@@ -28,18 +28,24 @@
 //! cabinet shows it as a cart that never runs ([`still`]).
 
 mod cart;
+mod colour;
 mod cover;
 mod frames;
+mod keys;
 mod prepare;
 mod read;
 mod shelf;
 mod tones;
+mod watch;
 
 pub use cart::{Cart, Instance, Stop, Trapped};
 pub use cartridge::Cover;
+pub use colour::{Resolved, SHOWN_BYTES, draw, resolve, shown};
 pub use cover::{cover, cover_rgba, cover_screen, still};
 pub use frames::Frames;
-pub use prepare::{METER, OUT_OF_MEMORY, Prepared, Refusal, START, TOO_DEEP, prepare};
-pub use read::{READ_BYTES, read_bytes, read_from_bytes};
-pub use shelf::{CATCH_UP, Shelf};
-pub use tones::{Played, Tone, Tones, WORDS, played_from_words, played_words};
+pub use keys::{KEYS, button};
+pub use prepare::{METER, OUT_OF_MEMORY, Prepared, Refusal, START, TOO_DEEP, prepare, shaped};
+pub use read::{READ_BYTES, read_bytes};
+pub use shelf::{CATCH_UP, FASTEST, KEPT, Shelf};
+pub use tones::{Tone, Tones, WORDS, batch};
+pub use watch::{BLOCK, Ran, Watch};

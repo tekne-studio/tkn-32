@@ -4,17 +4,18 @@
 // node the page connects it to. Every page that plays a cart sounds it
 // through this, the workbench among them.
 //
-// A page sends the tones of the updates it ran as one Uint32Array,
-// transferred (the workbench's `sound.svelte.ts` writes one, `batch`): first
-// how many updates a second the game runs, 0 to play every update at once,
-// then for each update how many tones it played and their words (`env.tone`'s
-// seven a tone), an update that played nothing among them. The worklet lays
+// A page sends the tones of the updates a game ran as one Uint32Array,
+// transferred, the batch the emulator's `sound` gives: first how many
+// updates a second the game runs, 0 to play every update at once, then for
+// each update how many tones it played and their words (`env.tone`'s seven
+// a tone), an update that played nothing among them. The worklet lays
 // them one update apart from a cursor kept a little ahead of what it renders,
 // so tones from one batch spread out as the game played them, and the next
-// batch goes on from where the last one ended. `{ hush: true }` drops what
-// waits and lets every channel go out; `{ end: true }` hushes it for good,
-// and the processor ends once the channels are out, so a node let go leaves
-// nothing running.
+// batch goes on from where the last one ended. `{ tone: words }` plays one
+// tone now, its seven words, as a batch of one update. `{ hush: true }`
+// drops what waits and lets every channel go out; `{ end: true }` hushes it
+// for good, and the processor ends once the channels are out, so a node let
+// go leaves nothing running.
 //
 // What waits is a ring made once, in the order it plays: the cursor only
 // moves forward, and is set back to the lead only when everything before
@@ -76,6 +77,8 @@ class ChipProcessor extends AudioWorkletProcessor {
 			} else if (data.end) {
 				this.hush();
 				this.ends = currentFrame + TAIL * sampleRate;
+			} else if (data.tone) {
+				if (this.ends === Infinity) this.take(Uint32Array.of(0, 1, ...data.tone));
 			} else if (data.hush) this.hush();
 		};
 	}

@@ -1,20 +1,19 @@
 <script lang="ts">
 	import type { Covered } from './bench';
-	import { HEIGHT, WIDTH } from './bench';
 
 	/** The cover read from the file: its text reaches the page as text, never as markup. */
-	let { cover }: { cover: Covered } = $props();
+	let { cover, width, height }: { cover: Covered; width: number; height: number } = $props();
 
 	let canvas: HTMLCanvasElement;
 
 	$effect(() => {
-		const pixels = new ImageData(new Uint8ClampedArray(cover.rgba.slice(0)), WIDTH, HEIGHT);
+		const pixels = new ImageData(new Uint8ClampedArray(cover.rgba), width, height);
 		canvas.getContext('2d')!.putImageData(pixels, 0, 0);
 	});
 </script>
 
 <div class="cover">
-	<canvas bind:this={canvas} width={WIDTH} height={HEIGHT}></canvas>
+	<canvas bind:this={canvas} {width} {height}></canvas>
 	{#if cover.said}
 		<dl>
 			<dt>title</dt>

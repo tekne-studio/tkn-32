@@ -1,11 +1,13 @@
 //! A cartridge's native engine: wasmi, a WebAssembly interpreter in plain
 //! Rust, behind `cartridge-run`'s [`Instance`]. It runs the prepared bytes
-//! with its own fuel off: the meter is in the code.
+//! with its own fuel off: the meter is in the code. The suites run each
+//! game on it as the reference every host of the emulator agrees with.
 
 use cartridge::{Export, FRAME_OVERHEAD, MAX_FRAME, MAX_STACK, MEMORY, TONE};
 use cartridge_run::{Cart, Instance, METER, Prepared, START, Stop, Tone, Tones, Trapped, prepare};
 use wasmi::{
-    Caller, CompilationMode, Config, Engine, Global, Linker, Memory, Module, Store, TypedFunc, Val,
+    Caller, CompilationMode, Config, Engine, Global, Instance as Instantiated, Linker, Memory,
+    Module, Store, TypedFunc, Val,
 };
 
 /// The calls wasmi lets a chain hold: twice what the contract allows, the
@@ -53,47 +55,13 @@ impl Wasmi {
     /// in the middle of a game.
     pub fn load(prepared: &Prepared) -> Result<Wasmi, Stop> {
         let load = |error: wasmi::Error| Stop::Load(error.to_string());
-        let mut config = Config::default();
-        config
-            .compilation_mode(CompilationMode::Eager)
-            .set_max_recursion_depth(DEPTH)
-            .set_max_stack_height(HEIGHT);
-        let engine = Engine::new(&config);
-        let module = Module::new(&engine, prepared.bytes()).map_err(load)?;
-        let mut store = Store::new(&engine, Tones::default());
-        let mut linker = <Linker<Tones>>::new(&engine);
-        let [module_name, name] = TONE;
-        linker
-            .func_wrap(
-                module_name,
-                name,
-                |mut caller: Caller<'_, Tones>,
-                 channel: i32,
-                 hz: i32,
-                 ms: i32,
-                 wave: i32,
-                 to_hz: i32,
-                 loud: i32,
-                 to_loud: i32| {
-                    let words =
-                        [channel, hz, ms, wave, to_hz, loud, to_loud].map(|word| word as u32);
-                    let [channel, hz, ms, wave, to_hz, loud, to_loud] = words;
-                    caller
-                        .data_mut()
-                        .hear(channel, hz, ms, wave, to_hz, loud, to_loud);
-                },
-            )
-            .map_err(|error| Stop::Load(error.to_string()))?;
-        let instance = linker
-            .instantiate_and_start(&mut store, &module)
-            .map_err(load)?;
-        let missing = |name: &str| Stop::Load(format!("no {name} after preparing"));
+        let (store, instance) = instantiate(prepared.bytes(), TONE).map_err(load)?;
         let memory = instance
             .get_memory(&store, MEMORY)
-            .ok_or_else(|| missing(MEMORY))?;
+            .ok_or_else(|| Stop::Load(missing(MEMORY)))?;
         let meter = instance
             .get_global(&store, METER)
-            .ok_or_else(|| missing(METER))?;
+            .ok_or_else(|| Stop::Load(missing(METER)))?;
         let start = instance.get_typed_func::<(), ()>(&store, START).ok();
         let ask = |export: Export| {
             instance
@@ -118,6 +86,51 @@ impl Wasmi {
             meter,
         })
     }
+}
+
+/// Compiles and instantiates `prepared` on an engine and a store of its
+/// own, its `tone` import, by module and name, hearing into the store's
+/// [`Tones`]. Every function is translated at once, and a chain of calls is
+/// held to what the contract allows.
+fn instantiate(
+    prepared: &[u8],
+    tone: [&str; 2],
+) -> Result<(Store<Tones>, Instantiated), wasmi::Error> {
+    let mut config = Config::default();
+    config
+        .compilation_mode(CompilationMode::Eager)
+        .set_max_recursion_depth(DEPTH)
+        .set_max_stack_height(HEIGHT);
+    let engine = Engine::new(&config);
+    let module = Module::new(&engine, prepared)?;
+    let mut store = Store::new(&engine, Tones::default());
+    let mut linker = <Linker<Tones>>::new(&engine);
+    let [module_name, name] = tone;
+    linker.func_wrap(
+        module_name,
+        name,
+        |mut caller: Caller<'_, Tones>,
+         channel: i32,
+         hz: i32,
+         ms: i32,
+         wave: i32,
+         to_hz: i32,
+         loud: i32,
+         to_loud: i32| {
+            let words = [channel, hz, ms, wave, to_hz, loud, to_loud].map(|word| word as u32);
+            let [channel, hz, ms, wave, to_hz, loud, to_loud] = words;
+            caller
+                .data_mut()
+                .hear(channel, hz, ms, wave, to_hz, loud, to_loud);
+        },
+    )?;
+    let instance = linker.instantiate_and_start(&mut store, &module)?;
+    Ok((store, instance))
+}
+
+/// The words for a part preparing gives a game, missing.
+fn missing(name: &str) -> String {
+    format!("no {name} after preparing")
 }
 
 impl Instance for Wasmi {

@@ -11,9 +11,6 @@ use cartridge_run::{cover, prepare};
 
 use crate::support::{assert_runs, cart};
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
-
 /// A cover's section by hand, as `cartridge-build` writes one.
 fn section(title: &[u8], maker: &[u8]) -> Vec<u8> {
     let mut out = vec![VERSION, title.len() as u8];

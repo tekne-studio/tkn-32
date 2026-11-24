@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { KEPT } from './bench.svelte';
-	import { TICKS } from './bench';
 	import { CHANNELS, PITCHES, WAVES, line, silences, type Played, type Tone } from './tone';
 
 	let {
 		played,
 		now,
+		ticks,
 		onpick
 	}: {
 		/** The tones of the last [`KEPT`] updates, in order. */
 		played: Played[];
 		/** The updates run so far. */
 		now: number;
+		/** Updates a second: how long a tone lasts, in updates. */
+		ticks: number;
 		/** A tone clicked, for the editor. */
 		onpick: (tone: Tone) => void;
 	} = $props();
@@ -33,7 +35,7 @@
 				last[tone.channel] = undefined;
 				continue;
 			}
-			const span = { from: update, to: update + Math.max(1, (tone.ms * TICKS) / 1000), tone };
+			const span = { from: update, to: update + Math.max(1, (tone.ms * ticks) / 1000), tone };
 			spans.push(span);
 			last[tone.channel] = span;
 		}
@@ -58,7 +60,7 @@
 			if (x(to) < 0) continue;
 			const top = tone.channel * ROW + 2;
 			const y = (hz: number) => top + (ROW - 6) * (1 - height(hz));
-			const length = Math.max(1, (tone.ms * TICKS) / 1000);
+			const length = Math.max(1, (tone.ms * ticks) / 1000);
 			// The pitch it reaches where it is cut, sliding by equal ratios.
 			const reached = tone.hz * Math.pow(tone.toHz / tone.hz, Math.min(1, (to - from) / length));
 			const gradient = context.createLinearGradient(x(from), 0, x(to), 0);

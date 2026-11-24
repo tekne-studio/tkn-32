@@ -1,7 +1,8 @@
 // Where the console writes `unsafe`. Its workspace forbids it; the names a
 // WebAssembly host knows a module by are the exception: a cartridge's
-// contract seven, the chip in its AudioWorklet three, each in one file, in a
-// crate that denies the rest. An example writes none: `cartridge::cart!`
+// contract seven, the chip in its AudioWorklet three, and the runner's calls
+// both ways, its engine's imports and its own exports, one file that allows
+// it whole: each in one file, in a crate that denies the rest. An example writes none: `cartridge::cart!`
 // writes its exports, so it denies `unsafe` too. Every other crate takes the
 // workspace's lints.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -9,7 +10,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 /** The files that write `unsafe`, and how many times each allows it. */
 const ABIS: Record<string, number> = {
 	'crates/cartridge/src/abi.rs': 7,
-	'crates/chip-worklet/src/lib.rs': 3
+	'crates/chip-worklet/src/lib.rs': 3,
+	'crates/runner/src/abi.rs': 1
 };
 
 const DENIES = /^\[lints\.rust\]\nunsafe_code = "deny"$/m;

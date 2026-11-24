@@ -4,12 +4,9 @@
 //! or to the wrong type, traps.
 
 use cartridge::MAX_TABLE;
-use cartridge_run::{Refusal, prepare};
+use cartridge_run::{Refusal, Stop, prepare};
 
 use crate::support::{assert_runs, assert_stops, cart};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
 
 #[test]
 fn more_than_one_table_is_refused() {
@@ -79,6 +76,6 @@ fn a_call_through_the_table_to_nothing_or_the_wrong_type_traps() {
         "(call_indirect (type $empty) (i32.const 0))",
         "(call_indirect (type $empty) (i32.const 2))",
     ] {
-        assert_stops(&cart(update, table, 1), "Trap", 0);
+        assert_stops(&cart(update, table, 1), Stop::Trap, 0);
     }
 }

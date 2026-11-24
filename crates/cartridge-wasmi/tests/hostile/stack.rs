@@ -4,12 +4,9 @@
 //! on every engine, so no engine's own limit comes first.
 
 use cartridge::{FRAME_OVERHEAD, MAX_FRAME, MAX_STACK};
-use cartridge_run::{Refusal, prepare};
+use cartridge_run::{Refusal, Stop, prepare};
 
 use crate::support::{assert_runs, assert_stops, cart};
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
 
 /// `$down` calls itself `n` times, `n + 1` calls in all, each holding a
 /// frame of its parameter, `locals` i64 locals, and the two values its
@@ -39,7 +36,7 @@ fn fit(frame: u32) -> u32 {
 fn recursion_without_end() {
     assert_stops(
         &cart("(call $down)", "(func $down (call $down))", 1),
-        "Stack",
+        Stop::Stack,
         0,
     );
 }
@@ -47,14 +44,14 @@ fn recursion_without_end() {
 #[test]
 fn mutual_recursion_without_end() {
     let more = "(func $a (call $b)) (func $b (call $a))";
-    assert_stops(&cart("(call $a)", more, 1), "Stack", 0);
+    assert_stops(&cart("(call $a)", more, 1), Stop::Stack, 0);
 }
 
 #[test]
 fn recursion_through_the_table_without_end() {
     let more = "(type $empty (func)) (table 1 funcref) (elem (i32.const 0) $down)
         (func $down (call_indirect (type $empty) (i32.const 0)))";
-    assert_stops(&cart("(call $down)", more, 1), "Stack", 0);
+    assert_stops(&cart("(call $down)", more, 1), Stop::Stack, 0);
 }
 
 #[test]
@@ -62,7 +59,7 @@ fn the_deepest_chain_of_small_frames_runs_and_one_more_call_stops() {
     let calls = fit(3);
     assert!(calls > 1000, "{calls} calls: deeper than wasmi's default");
     assert_runs(&chain(calls - 1, 0), 2);
-    assert_stops(&chain(calls, 0), "Stack", 0);
+    assert_stops(&chain(calls, 0), Stop::Stack, 0);
 }
 
 #[test]
@@ -70,7 +67,31 @@ fn the_deepest_chain_of_the_largest_frames_runs_and_one_more_call_stops() {
     let locals = MAX_FRAME - 3;
     let calls = fit(MAX_FRAME);
     assert_runs(&chain(calls - 1, locals), 2);
-    assert_stops(&chain(calls, locals), "Stack", 0);
+    assert_stops(&chain(calls, locals), Stop::Stack, 0);
+}
+
+/// `$down` calls itself `n` times, then plays a tone straight through
+/// `env.tone`: a frame of its parameter and the seven values it calls with.
+fn chain_playing(n: u32) -> Vec<u8> {
+    cart(
+        &format!("(call $down (i32.const {n}))"),
+        "(func $down (param $n i32)
+            (if (local.get $n)
+                (then (call $down (i32.sub (local.get $n) (i32.const 1))))
+                (else (call $tone_to (i32.const 0) (i32.const 440) (i32.const 50)
+                    (i32.const 0) (i32.const 440) (i32.const 255) (i32.const 255)))))",
+        1,
+    )
+}
+
+#[test]
+fn a_tone_at_the_bottom_of_the_deepest_chain_is_heard_and_one_more_call_stops() {
+    // What hears it, the host's and the runner's frames, stands on the
+    // deepest chain the contract lets a game hold: no engine's limit first.
+    // The import's frame is its seven parameters.
+    let calls = (MAX_STACK - (7 + FRAME_OVERHEAD)) / (8 + FRAME_OVERHEAD);
+    assert_runs(&chain_playing(calls - 1), 2);
+    assert_stops(&chain_playing(calls), Stop::Stack, 0);
 }
 
 #[test]

@@ -6,9 +6,6 @@ use cartridge_run::{Refusal, prepare};
 
 use crate::support::assert_runs;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
-
 /// A module that keeps the contract but for its `import`.
 fn importing(import: &str) -> Vec<u8> {
     wat::parse_str(format!(

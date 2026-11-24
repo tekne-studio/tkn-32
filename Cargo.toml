@@ -18,7 +18,6 @@ publish = false
 cartridge = { path = "crates/cartridge" }
 cartridge-run = { path = "crates/cartridge-run" }
 cartridge-wasmi = { path = "crates/cartridge-wasmi" }
-cartridge-web = { path = "crates/cartridge-web" }
 cartridge-build = { path = "crates/cartridge-build" }
 cartridge-test = { path = "crates/cartridge-test" }
 chip = { path = "crates/chip" }

@@ -6,13 +6,10 @@
 #[path = "support/mod.rs"]
 mod support;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
-
-use cartridge::wave;
+use cartridge::{PIXELS, wave};
 use cartridge_run::{Cart, Stop, Tone};
 use cartridge_wasmi::Wasmi;
-use support::{assert_runs, assert_stops, cart, on_every_engine};
+use support::{assert_runs, assert_stops, cart, fnv, on_every_engine};
 
 fn run(file: &[u8], updates: u32) -> Cart<Wasmi> {
     let mut cart = Wasmi::open(file, 1);
@@ -59,8 +56,8 @@ fn saying(abi: u32, more: &str) -> Vec<u8> {
 #[test]
 fn another_version_of_the_contract_is_stopped() {
     assert_runs(&saying(1, ""), 2);
-    assert_stops(&saying(0, ""), "Abi(0)", 0);
-    assert_stops(&saying(2, ""), "Abi(2)", 0);
+    assert_stops(&saying(0, ""), Stop::Abi(0), 0);
+    assert_stops(&saying(2, ""), Stop::Abi(2), 0);
     assert_eq!(
         Stop::Abi(2).to_string(),
         "it speaks contract 2, this runner 1"
@@ -71,12 +68,16 @@ fn another_version_of_the_contract_is_stopped() {
 fn it_draws_the_screen_it_asks_for_from_the_list() {
     let screen = |step: &str| format!(r#"(func (export "screen") (result i32) {step})"#);
     assert_runs(&saying(1, &screen("(i32.const 0)")), 2);
-    assert_stops(&saying(1, &screen("(i32.const 1)")), "Size(1)", 0);
-    assert_stops(&saying(1, &screen("(i32.const -1)")), "Size(4294967295)", 0);
-    assert_stops(&saying(1, &screen("unreachable")), "Trap", 0);
+    assert_stops(&saying(1, &screen("(i32.const 1)")), Stop::Size(1), 0);
+    assert_stops(
+        &saying(1, &screen("(i32.const -1)")),
+        Stop::Size(4294967295),
+        0,
+    );
+    assert_stops(&saying(1, &screen("unreachable")), Stop::Trap, 0);
     // One that spends the start budget stops before `init`.
     let forever = screen("(loop $again (br $again)) (i32.const 0)");
-    assert_stops(&saying(1, &forever), "Budget", 0);
+    assert_stops(&saying(1, &forever), Stop::Budget, 0);
     // One of another type is dropped, as a name outside the contract is:
     // step 0.
     let other = r#"(func (export "screen") (param i32) (result i32) (i32.const 1))"#;
@@ -88,9 +89,10 @@ fn it_draws_the_screen_it_asks_for_from_the_list() {
 }
 
 #[test]
-fn tones_are_heard_up_to_the_most_an_update_keeps() {
+fn tones_are_heard_from_the_first_calls_an_update_makes() {
     // One on a channel the contract lacks, then steady and moving tones in
-    // turn, forty of them: the first sixteen the contract allows are kept.
+    // turn, forty of them: the first sixteen calls count, and of those the
+    // one outside the contract is dropped, so fifteen are kept.
     let plays = "(local $n i32)
         (call $tone (i32.const 9) (i32.const 440) (i32.const 100) (i32.const 0))
         (loop $again
@@ -103,7 +105,9 @@ fn tones_are_heard_up_to_the_most_an_update_keeps() {
     let tones = Wasmi::open(&file, 1).update(0).to_vec();
     let steady = Tone::steady(1, 440, 100, wave::TRIANGLE as u8);
     let boom = Tone::new(2, 160, 250, wave::TRIANGLE as u8, 45, 255, 0);
-    assert_eq!(tones, [steady, boom].repeat(cartridge::MAX_TONES / 2));
+    let mut kept = [steady, boom].repeat(cartridge::MAX_TONES / 2);
+    kept.pop();
+    assert_eq!(tones, kept);
     let run = on_every_engine(&file, 1, &[0; 3]);
     assert_eq!((run.stop.as_str(), run.updates), ("running", 3));
 }
@@ -154,6 +158,16 @@ fn the_same_seed_and_buttons_give_the_same_frames_on_every_engine() {
 }
 
 #[test]
+fn a_colour_partly_seen_is_drawn_opaque_over_the_dark_on_every_engine() {
+    // Colour 0 at half its alpha, and every pixel in it: each host draws
+    // what the runner resolved, the colour over the screen's dark, opaque.
+    let half = "(i32.store (i32.const 0) (i32.const 0x803364c8))";
+    let run = on_every_engine(&cart(half, "", 1), 1, &[0; 2]);
+    let drawn = [100, 50, 26, 255].repeat(PIXELS);
+    assert_eq!(run.rgba, fnv(0x811c_9dc5, &drawn), "{run}");
+}
+
+#[test]
 fn a_kept_file_runs_as_it_always_has() {
     // Dot as it was built once, its bytes kept with the sound's goldens: a
     // change that moves its frames or its tones breaks every cartridge
@@ -168,5 +182,5 @@ fn a_kept_file_runs_as_it_always_has() {
         })
         .collect();
     let run = on_every_engine(file, 1, &buttons);
-    assert_eq!(run.to_string(), "d09de795 b0e8de49 running 120");
+    assert_eq!(run.to_string(), "d09de795 b0e8de49 running 120 cd60aabf");
 }

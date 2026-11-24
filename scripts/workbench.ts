@@ -1,9 +1,8 @@
-// The workbench: a page that runs a cartridge and shows it from inside.
-// Builds the bench's engine (`crates/workbench`, through wasm-bindgen) with
-// the emulator, whose chip it sounds through (`scripts/emulator.ts`), and
-// every cart under examples/, puts the carts where the page's server serves
-// them, and starts the page on the first free port from 5180, opened on the
-// cart named:
+// The workbench: a page that runs a cartridge and shows it from inside, on
+// the emulator a cabinet runs. Builds the emulator (`scripts/emulator.ts`)
+// into the page and every cart under examples/, puts the carts where the
+// page's server serves them, and starts the page on the first free port
+// from 5180, opened on the cart named:
 //   bun run workbench            (rocks)
 //   bun run workbench dot
 //   bun run workbench ../mygame   (a cart in another workspace, by its folder)
@@ -15,7 +14,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, watch } from 'node:fs';
 import { $ } from 'bun';
 import { BUILT, build, built, cartNamed, examples, type Cart } from './carts';
-import { buildEmulator } from './emulator';
+import { buildEmulator, EMULATOR } from './emulator';
 import { freePort, HOST, ROOT } from './lib';
 import { regions } from './linkmap';
 
@@ -38,25 +37,19 @@ async function serve(cart: Cart) {
 }
 
 /**
- * Builds the bench's engine (through wasm-bindgen) beside the emulator, and
- * puts into the page `web` each file of them that changed: all of them, for
- * the page to run, or the `types` alone, what a check reads.
+ * Builds the emulator and puts it into the page `web` as it is, its files
+ * named by their hash beside `emulator.json`: each file that changed, and
+ * none of an older build left.
  */
-export async function buildEngine(web = WEB, what: 'all' | 'types' = 'all') {
-	const emulator = `${ROOT}/target/emulator`;
-	const made = `${ROOT}/target/workbench-pkg`;
-	await buildEmulator(emulator);
-	await $`cargo build --release --target wasm32-unknown-unknown -p workbench`.cwd(ROOT);
-	await $`wasm-bindgen --target web --out-dir ${made} ${ROOT}/${BUILT}/workbench.wasm`.cwd(ROOT);
-	const files = readdirSync(made).map((file) => [`${made}/${file}`, file]);
-	// The chip as every page's AudioWorklet runs it, the emulator's own
-	// files: plain exports, no glue, and the processor that runs them.
-	files.push(...['chip_worklet.wasm', 'chip-worklet.js'].map((file) => [`${emulator}/${file}`, file]));
-	mkdirSync(`${web}/src/lib/pkg`, { recursive: true });
-	for (const [from, file] of files) {
-		if (what === 'types' && !file.endsWith('.d.ts')) continue;
-		const to = `${web}/src/lib/pkg/${file}`;
-		const bytes = readFileSync(from);
+export async function buildEmulatorInto(web = WEB) {
+	const manifest = await buildEmulator(EMULATOR);
+	const pkg = `${web}/src/lib/pkg`;
+	const files = ['emulator.json', manifest.runner, manifest.host, manifest.chip, manifest.processor];
+	mkdirSync(pkg, { recursive: true });
+	for (const file of readdirSync(pkg)) if (!files.includes(file)) rmSync(`${pkg}/${file}`);
+	for (const file of files) {
+		const to = `${pkg}/${file}`;
+		const bytes = readFileSync(`${EMULATOR}/${file}`);
 		if (!existsSync(to) || !bytes.equals(readFileSync(to))) await Bun.write(to, bytes);
 	}
 }
@@ -77,7 +70,7 @@ if (import.meta.main) {
 	const opened = await cartNamed(asked);
 	const outside = asked.includes('/') ? [opened] : [];
 	const cart = opened.name;
-	await buildEngine();
+	await buildEmulatorInto();
 	const carts = await buildCarts(outside);
 	const port = freePort(5180);
 	console.log(`workbench: http://${HOST}:${port}/?cart=${cart}`);
