@@ -1,10 +1,12 @@
-//! Dot, the smallest whole cartridge: its cover first, then a dot the arrows
-//! move, a beep and the next colour when A is pressed. The guide to making a
-//! cartridge starts from it, and a game of your own starts as a copy of it.
+//! Dot, the smallest whole cartridge: its cover first, then a dot each pad
+//! moves, a beep and the next colour when its A is pressed. The guide to
+//! making a cartridge starts from it, and a game of your own starts as a copy
+//! of it.
 
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
-use cartridge::{Buttons, Game, HEIGHT, Palette, Screen, WIDTH, button, tone, wave};
+use cartridge::button::{self, PADS};
+use cartridge::{Buttons, Game, HEIGHT, Palette, Screen, WIDTH, tone, wave};
 
 cartridge::cart!(Dot);
 // cover.png, made the file's cover by build.rs, and `COVER` to draw it.
@@ -42,34 +44,42 @@ const PALETTE: Palette = [
 const COLOURS: [u8; 8] = [2, 3, 4, 5, 6, 7, 8, 9];
 
 pub struct Dot {
-    /// Whether the cover still shows: until the first button.
+    /// Whether the cover still shows: until the first button of any pad.
     covered: bool,
     /// Whether the cover was drawn: once, since the screen keeps what the
     /// last update left.
     cover_drawn: bool,
+    /// A dot each pad moves, the first pad's first.
+    dots: [Spot; PADS as usize],
+    before: Buttons,
+}
+
+/// Where a dot is, and its colour.
+struct Spot {
     x: i32,
     y: i32,
     colour: usize,
-    before: Buttons,
 }
 
 impl Game for Dot {
     fn start(seed: u32) -> Dot {
-        // The seed is a cartridge's only chance: here, the first colour.
-        let colour = seed as usize % COLOURS.len();
-        let (x, y) = ((WIDTH as i32 - SIDE) / 2, (HEIGHT as i32 - SIDE) / 2);
+        // The seed is a cartridge's only chance: here, the first colours.
+        let y = (HEIGHT as i32 - SIDE) / 2;
+        let dots = core::array::from_fn(|pad| Spot {
+            x: (WIDTH as i32 - SIDE) * (pad as i32 + 1) / (PADS as i32 + 1),
+            y,
+            colour: (seed as usize + pad * COLOURS.len() / 2) % COLOURS.len(),
+        });
         Dot {
             covered: true,
             cover_drawn: false,
-            x,
-            y,
-            colour,
+            dots,
             before: Buttons(0),
         }
     }
 
     fn update(&mut self, buttons: Buttons, screen: &mut Screen) {
-        self.covered &= buttons.0 == 0;
+        self.covered &= !buttons.any();
         if self.covered {
             // An update that draws nothing costs next to nothing.
             if !core::mem::replace(&mut self.cover_drawn, true) {
@@ -77,18 +87,26 @@ impl Game for Dot {
             }
             return;
         }
-        let axis = |less, more| i32::from(buttons.held(more)) - i32::from(buttons.held(less));
-        self.x = (self.x + axis(button::LEFT, button::RIGHT)).clamp(0, WIDTH as i32 - SIDE);
-        self.y = (self.y + axis(button::UP, button::DOWN)).clamp(0, HEIGHT as i32 - SIDE);
-        if buttons.pressed_since(self.before).held(button::A) {
-            self.colour = (self.colour + 1) % COLOURS.len();
-            tone(0, 440 + 55 * self.colour as u32, 80, wave::SQUARE);
+        for (channel, dot) in (0..).zip(&mut self.dots) {
+            // Each pad's buttons read as the first pad's: one dot's code
+            // moves them all, and each pad beeps on a channel of its own.
+            let pad = channel + 1;
+            let (held, before) = (buttons.pad(pad), self.before.pad(pad));
+            let axis = |less, more| i32::from(held.held(more)) - i32::from(held.held(less));
+            dot.x = (dot.x + axis(button::LEFT, button::RIGHT)).clamp(0, WIDTH as i32 - SIDE);
+            dot.y = (dot.y + axis(button::UP, button::DOWN)).clamp(0, HEIGHT as i32 - SIDE);
+            if held.pressed_since(before).held(button::A) {
+                dot.colour = (dot.colour + 1) % COLOURS.len();
+                tone(channel, 440 + 55 * dot.colour as u32, 80, wave::SQUARE);
+            }
         }
         self.before = buttons;
 
         screen.clear(0);
-        screen.text(4, 4, "ARROWS MOVE, A BEEPS", 1, 1);
-        screen.fill(self.x, self.y, SIDE, SIDE, COLOURS[self.colour]);
+        screen.text(4, 4, "EACH PAD MOVES A DOT, A BEEPS", 1, 1);
+        for dot in &self.dots {
+            screen.fill(dot.x, dot.y, SIDE, SIDE, COLOURS[dot.colour]);
+        }
     }
 
     fn palette(&self) -> Palette {

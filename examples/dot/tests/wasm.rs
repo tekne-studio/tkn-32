@@ -1,21 +1,29 @@
 //! The cartridge built to WebAssembly and run as a runner runs it: it keeps
-//! the contract, its buttons move it and play its tone, well within the
-//! budget, and every engine at hand shows the same frames. `built!` builds
-//! the crate it is written in, so a copy of this cart tests itself as it is.
+//! the contract, each pad's buttons move its dot and play its tone, well
+//! within the budget, and every engine at hand shows the same frames.
+//! `built!` builds the crate it is written in, so a copy of this cart tests
+//! itself as it is.
 
-use cartridge::{UPDATE_BUDGET, button};
+use cartridge::UPDATE_BUDGET;
+use cartridge::button::{self, on};
 use cartridge_test::built;
 use cartridge_wasmi::Wasmi;
 
 const SEED: u32 = 1;
 
-/// Right for a second, then down, pressing A twice on the way.
+/// Right for a second, then down, pressing A twice on the way; the second
+/// pad left all along, pressing its A once.
 fn buttons() -> Vec<u32> {
     (0..120)
         .map(|tick| match tick {
             0..60 => button::RIGHT,
             60 | 90 => button::DOWN | button::A,
             _ => button::DOWN,
+        })
+        .zip(0..)
+        .map(|(first, tick)| match tick {
+            30 => first | on(2, button::LEFT | button::A),
+            _ => first | on(2, button::LEFT),
         })
         .collect()
 }
@@ -34,10 +42,43 @@ fn it_runs_moves_and_beeps_within_its_budget() {
         Some(cart.screen()) != first.as_ref(),
         "the buttons moved nothing"
     );
-    assert_eq!(tones, 2, "one tone a press of A");
+    assert_eq!(tones, 3, "one tone a press of either pad's A");
     assert!(
         peak < UPDATE_BUDGET / 4,
         "the heaviest update took {peak} of {UPDATE_BUDGET}"
+    );
+}
+
+#[test]
+fn each_pad_moves_its_own_dot() {
+    // Where the dot of `colour` lies: its first pixel, row by row.
+    let at = |pixels: &[u8], colour: u8| pixels.iter().position(|&pixel| pixel == colour);
+    let mut cart = Wasmi::open(built!(), SEED);
+    cart.update(button::START);
+    let still = cart.screen().to_vec();
+    let moved = |held: u32| {
+        let mut cart = Wasmi::open(built!(), SEED);
+        cart.update(button::START);
+        for _ in 0..10 {
+            cart.update(held);
+        }
+        cart.screen().to_vec()
+    };
+    let (first, second) = (moved(button::RIGHT), moved(on(2, button::RIGHT)));
+    // Dot's colours at seed 1: the first pad's 3, the second's 7.
+    for (screen, colour, by) in [(&first, 3, 10), (&second, 7, 10)] {
+        let (from, to) = (at(&still, colour).unwrap(), at(screen, colour).unwrap());
+        assert_eq!(to - from, by, "colour {colour}");
+    }
+    assert_eq!(
+        at(&first, 7),
+        at(&still, 7),
+        "the first pad moves no other dot"
+    );
+    assert_eq!(
+        at(&second, 3),
+        at(&still, 3),
+        "the second pad moves no other dot"
     );
 }
 

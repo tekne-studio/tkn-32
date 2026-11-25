@@ -1,6 +1,6 @@
 [package]
 name = "dot"
-description = "The smallest whole cartridge: a dot the buttons move. The guide's example, the one a new game is copied from; no version ships it."
+description = "The smallest whole cartridge: a dot each pad moves. The guide's example, the one a new game is copied from; no version ships it."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

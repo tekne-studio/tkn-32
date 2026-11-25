@@ -35,7 +35,7 @@ impl Game for Hues {
     }
 
     fn update(&mut self, buttons: Buttons, screen: &mut Screen) {
-        self.covered &= buttons.0 == 0;
+        self.covered &= !buttons.any();
         if self.covered {
             if !core::mem::replace(&mut self.cover_drawn, true) {
                 COVER.draw(screen);
