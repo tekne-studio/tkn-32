@@ -31,6 +31,34 @@ fn a_cartridge_that_keeps_the_contract_runs() {
 }
 
 #[test]
+fn every_pad_arrives_and_no_bit_no_button_names() {
+    use cartridge::button::{A, EVERY, LEFT, START, on};
+    // Paints each byte of its buttons, so each pad is seen to arrive.
+    let update = "(i32.store (i32.const 4096) (local.get $buttons))";
+    let file = cart(update, "", 1);
+    let mut alone = Wasmi::open(&file, 1);
+    alone.update(LEFT | on(2, A | START) | 1 << 7 | 1 << 15 | 1 << 16);
+    assert_eq!(alone.screen()[..4], [LEFT as u8, (A | START) as u8, 0, 0]);
+    let buttons: Vec<u32> = (0..24).map(|tick| tick * 0x0123_4567).collect();
+    let run = on_every_engine(&file, 1, &buttons);
+    let sent: Vec<u32> = buttons.iter().map(|held| held & EVERY).collect();
+    assert_eq!(
+        run,
+        on_every_engine(&file, 1, &sent),
+        "a bit no button names never arrives"
+    );
+    let first = sent
+        .iter()
+        .map(|held| held & on(1, EVERY))
+        .collect::<Vec<_>>();
+    assert_ne!(
+        run,
+        on_every_engine(&file, 1, &first),
+        "the second pad arrives"
+    );
+}
+
+#[test]
 fn a_trap_stops_it_and_the_screen_says_so() {
     let cart = run(&cart("unreachable", "", 1), 3);
     assert_eq!(cart.stop(), Some(&Stop::Trap));
@@ -186,4 +214,18 @@ fn a_kept_file_runs_as_it_always_has() {
         run.to_string(),
         "d09de795 b0e8de49 running 120 cd60aabf check:"
     );
+    // Made before the second pad, it moves by the first pad's bits by name
+    // and leaves its cover on any bit of the number: with the first pad
+    // pressing from update 0, the second held through its game changes
+    // nothing.
+    let second = cartridge::button::on(2, cartridge::button::EVERY);
+    let both: Vec<u32> = buttons.iter().map(|held| held | second).collect();
+    assert_eq!(on_every_engine(file, 1, &both), run);
+    // Pressed first and alone, the second pad leaves the cover, as a
+    // button of the first pad that moves nothing does.
+    let first = |held: u32| on_every_engine(file, 1, &[held, 0, 0]);
+    let woken = first(cartridge::button::START);
+    assert_ne!(first(0).hash, woken.hash, "nobody pressed: the cover stays");
+    let start = cartridge::button::on(2, cartridge::button::START);
+    assert_eq!(first(start), woken);
 }

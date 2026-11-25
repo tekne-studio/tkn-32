@@ -185,14 +185,15 @@ impl<I: Instance> Cart<I> {
         }
     }
 
-    /// One tick: `update` with the buttons held, then the screen and the
-    /// palette read, all under one budget. Gives the tones it played.
+    /// One tick: `update` with the buttons every pad holds, any bit no
+    /// button names let go, then the screen and the palette read, all under
+    /// one budget. Gives the tones it played.
     pub fn update(&mut self, buttons: u32) -> &[Tone] {
         self.tones.clear();
         let Some(mut instance) = self.instance.take() else {
             return &self.tones;
         };
-        let buttons = buttons & button::ALL;
+        let buttons = buttons & button::EVERY;
         instance.set_meter(UPDATE_BUDGET as i32);
         let ran = match instance.call(Export::Update, buttons) {
             Err(Trapped) => Err(why(&instance)),
@@ -204,10 +205,7 @@ impl<I: Instance> Cart<I> {
         };
         let spent = UPDATE_BUDGET.saturating_sub(instance.meter().max(0) as u32);
         if let Some(watch) = &mut self.watch {
-            watch.add(Ran {
-                buttons: buttons as u8,
-                spent,
-            });
+            watch.add(Ran { buttons, spent });
             // The engine is let go as the cart stops: what the update wrote
             // before it is read first.
             if ran.is_err() {

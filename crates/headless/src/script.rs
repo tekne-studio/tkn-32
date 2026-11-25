@@ -1,10 +1,11 @@
 //! A script of buttons: `UPDATE:NAMES` items, held from that update
 //! (counted from 0) until the next item's, the names joined by `+` (left
-//! right up down a b start) or `-` for none. `#` comments to the line's end.
-//! The workbench saves a session in this form (`web/src/lib/session.ts`).
+//! right up down a b start) or `-` for none. A name is the first pad's; the
+//! second pad's takes `2.` before it (`2.a`). `#` comments to the line's
+//! end. The workbench saves a session in this form (`web/src/lib/session.ts`).
 //!
 //! ```text
-//! 30:start 34:- 60:right+a 100:up # then thrust
+//! 30:start 34:- 60:right+a+2.left 100:up # then thrust
 //! ```
 
 use cartridge::button;
@@ -26,16 +27,7 @@ impl Script {
                 .ok_or(format!("--buttons: {item:?} wants UPDATE:NAMES"))?;
             let mut held = 0;
             for name in names.split('+').filter(|name| *name != "-") {
-                held |= match name {
-                    "left" => button::LEFT,
-                    "right" => button::RIGHT,
-                    "up" => button::UP,
-                    "down" => button::DOWN,
-                    "a" => button::A,
-                    "b" => button::B,
-                    "start" => button::START,
-                    other => return Err(format!("--buttons: no button {other:?}")),
-                };
+                held |= named(name).ok_or(format!("--buttons: no button {name:?}"))?;
             }
             let from = from
                 .parse()
@@ -55,6 +47,21 @@ impl Script {
     }
 }
 
+/// The bit of a button by its name in a script: the first pad's bare, a
+/// later pad's after its number as written plainly (`2.a`), so each
+/// button has one name, the one the workbench writes.
+fn named(name: &str) -> Option<u32> {
+    let (pad, name) = match name.split_once('.') {
+        Some((number, name)) => (
+            (2..=button::PADS).find(|pad| pad.to_string() == number)?,
+            name,
+        ),
+        None => (1, name),
+    };
+    let (_, bit) = button::NAMED.iter().find(|(named, _)| *named == name)?;
+    Some(button::on(pad, *bit))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,8 +79,18 @@ mod tests {
     }
 
     #[test]
+    fn the_second_pad_is_named_by_its_number() {
+        let script = Script::parse("0:a+2.a 5:2.left+2.start").unwrap();
+        assert_eq!(script.held(0), button::A | button::on(2, button::A));
+        assert_eq!(script.held(5), button::on(2, button::LEFT | button::START));
+    }
+
+    #[test]
     fn what_is_no_script_is_refused() {
         assert!(Script::parse("3:jump").unwrap_err().contains("no button"));
+        for name in ["3.a", "1.a", "0.a", "02.a", "+2.a", "2.jump", "x.a", ".a"] {
+            assert!(Script::parse(&format!("0:{name}")).is_err(), "{name}");
+        }
         assert!(Script::parse("5:a 2:b").unwrap_err().contains("in order"));
         assert!(Script::parse("a").unwrap_err().contains("UPDATE:NAMES"));
         assert!(Script::parse("x:a").unwrap_err().contains("as an update"));

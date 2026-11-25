@@ -205,12 +205,12 @@ pub fn on_every_engine(file: &[u8], seed: u32, buttons: &[u32]) -> Run {
 }
 
 /// Keeps a case every host agreed on in `folder`, a file each, for the
-/// emulator's build to gather into its cases (`bun run emulator`): the
-/// test it came from, the cart's file, its seed, its buttons, a byte an
-/// update, as runs of one value, what every host's check says of the file,
-/// and the run every host must give. A file past the most a cartridge may
-/// have is no case: its bytes would outweigh every other case's, and a
-/// host makes its own from the manifest's `most`.
+/// emulator's build to gather into its cases (`bun run emulator`): the test
+/// it came from, the cart's file, its seed, its buttons, the number
+/// `update` takes, as runs of one value, what every host's check says of
+/// the file, and the run every host must give. A file past the most a
+/// cartridge may have is no case: its bytes would outweigh every other
+/// case's, and a host makes its own from the manifest's `most`.
 fn keep_case(folder: &Path, file: &[u8], seed: u32, buttons: &[u32], run: &Run) {
     if file.len() > cartridge::MAX_FILE {
         return;

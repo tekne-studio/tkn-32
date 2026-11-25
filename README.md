@@ -1,8 +1,8 @@
 # TKN-32
 
 A fantasy console: a small game is one WebAssembly file, a screen of
-160 by 120 pixels in 32 colours, seven buttons and a four-channel sound
-chip. The same file, the same seed and the same buttons give the same
+160 by 120 pixels in 32 colours, two pads of seven buttons and a
+four-channel sound chip. The same file, the same seed and the same buttons give the same
 frames on every runner: native, in a browser, in a test. The arcade
 cabinets of [Planet](https://github.com/tekne-studio/planet) run it.
 
@@ -19,7 +19,7 @@ A game exports, every value an `i32`:
 |---|---|
 | `cart_abi()` | the contract version it speaks: 1 |
 | `init(seed)` | called once, before any update |
-| `update(buttons)` | called 60 times a second with the buttons held |
+| `update(buttons)` | called 60 times a second with the buttons every pad holds |
 | `frame()`, `palette()` | the addresses of its screen and its palette |
 | `memory` | its own, never imported |
 
@@ -49,12 +49,24 @@ at the same instruction. A stopped game's screen says `STOPPED` and why.
 
 ## The buttons
 
-| Button | Bit | Keys |
-|---|---|---|
-| `LEFT` `RIGHT` `UP` `DOWN` | 0 to 3 | WASD or the arrows |
-| `A` | 4 | Space or Z |
-| `B` | 5 | Shift or X |
-| `START` | 6 | Enter |
+A byte a pad from the lowest: the first pad's buttons in bits 0 to 6, the
+second's in bits 8 to 14, in the same order. A runner sends no other bit,
+and a game reads the pads it plays: `buttons.pad(2)` is the second pad's,
+read by the same names. `held` with a name reads the first pad; `any`,
+`pressed_since`, `==` and `.0` see every pad. One person plays the first
+pad by every key; two sharing a keyboard play a half each.
+
+<!-- generated:keys -->
+| Button | Bits (pad 1, pad 2) | 1 person | 2 people: pad 1 | 2 people: pad 2 |
+| --- | --- | --- | --- | --- |
+| `LEFT` | 0, 8 | ← or A | A | ← |
+| `RIGHT` | 1, 9 | → or D | D | → |
+| `UP` | 2, 10 | ↑ or W | W | ↑ |
+| `DOWN` | 3, 11 | ↓ or S | S | ↓ |
+| `A` | 4, 12 | Space or Z | Space or Z | K |
+| `B` | 5, 13 | Shift or X | left Shift or X | L |
+| `START` | 6, 14 | Enter | 1 | Enter |
+<!-- /generated:keys -->
 
 ## The chip
 
@@ -126,7 +138,8 @@ bun run cart rocks --buttons @session.txt --frames 351 --wav out/rocks.wav
   `out/<name>/`, the frames' hash, the meter's mean and peak, the tones
   played, and the stop if one came.
 - `--buttons`: `UPDATE:NAMES` items, each held until the next; names joined
-  by `+` (`left` `right` `up` `down` `a` `b` `start`), `-` for none.
+  by `+` (`left` `right` `up` `down` `a` `b` `start`, the first pad's;
+  `2.a` and the like, the second's), `-` for none.
 - `--wav FILE`: the tones through the chip as a 48 kHz WAV.
 - `--seed N`, `--frames N`, `--out DIR`, `--at N,N`, `--scale N`.
 

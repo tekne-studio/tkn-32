@@ -1,8 +1,10 @@
 // The host's own calls, past what a page asks: a file too large, a window
 // past the end, a step of every update there is, prepared bytes that
-// preparing never gave. Each answers, and the emulator runs on. It runs the
-// console's build of the emulator (`bun scripts/emulator.ts`, which `bun
-// scripts/check.ts` runs first) on bun's WebAssembly.
+// preparing never gave, a script of every pad's buttons, a script too
+// long. Each answers, and
+// the emulator runs on. It runs the console's build of the emulator (`bun
+// scripts/emulator.ts`, which `bun scripts/check.ts` runs first) on bun's
+// WebAssembly.
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { EMULATOR } from '../../scripts/emulator';
@@ -63,6 +65,42 @@ describe('the host', () => {
 		runsAfter(() => {
 			emulator.open(3, dot, 1, 0);
 			expect(emulator.step(3, 0xffffffff)).toBe(emulator.kept);
+		});
+	});
+
+	test('gives a script past the longest no room, its words never read', () => {
+		runsAfter(() => {
+			emulator.open(4, dot, 1, 0);
+			emulator.script(4, [1, 2]);
+			for (const length of [emulator.longest + 1, 2 ** 32 + 1]) {
+				expect(() => emulator.script(4, unread(length))).toThrow(`past the ${emulator.longest} one holds`);
+			}
+			// What it plays plays on, and a script of the longest is one.
+			expect(emulator.scripted(4)).toBe(2);
+			emulator.script(4, new Uint32Array(emulator.longest));
+			expect(emulator.scripted(4)).toBe(2 + emulator.longest);
+			emulator.close(4);
+		});
+	});
+
+	test('plays a script of every pad, each update the whole number, and no other bit', () => {
+		const { pads, padBits } = emulator;
+		expect([pads, padBits]).toEqual([2, 8]);
+		const a = emulator.buttons.get('a');
+		const second = a << padBits;
+		expect(emulator.shared.get('KeyK')).toBe(second);
+		expect(emulator.shared.get('KeyZ')).toBe(a);
+		expect(emulator.keys.get('KeyZ')).toBe(a);
+		const all = [...emulator.buttons.values()].reduce((all, bit) => all | bit);
+		const every = Array.from({ length: pads }, (_, pad) => all << (pad * padBits)).reduce((every, pad) => every | pad);
+		runsAfter(() => {
+			emulator.open(6, dot, 1, 0, true);
+			emulator.script(6, [second, 0xffffffff, a | second]);
+			// A room counted in words: the script is the updates given, none more or less.
+			expect(emulator.scripted(6)).toBe(3);
+			expect(emulator.step(6, 3)).toBe(3);
+			const ran = emulator.ran(6, 0);
+			expect([ran[0], ran[2], ran[4]]).toEqual([second, every, a | second]);
 		});
 	});
 

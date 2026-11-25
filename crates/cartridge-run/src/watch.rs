@@ -17,7 +17,7 @@ pub const BLOCK: usize = 256;
 /// units it spent, the screen and the palette read with it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ran {
-    pub buttons: u8,
+    pub buttons: u32,
     pub spent: u32,
 }
 

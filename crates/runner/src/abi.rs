@@ -19,7 +19,7 @@ use cartridge::{
     ABI, FRAME_OVERHEAD, HEIGHT, MAX_FILE, MAX_FRAME, MAX_MEMORY, MAX_STACK, MAX_TABLE, MAX_TONES,
     TICKS, UPDATE_BUDGET, WIDTH,
 };
-use cartridge_run::{BLOCK, Cart, KEPT, KEYS, SHOWN_BYTES, Stop, WORDS, Watch};
+use cartridge_run::{BLOCK, Cart, KEPT, KEYS, LONGEST, SHARED, SHOWN_BYTES, Stop, WORDS, Watch};
 
 /// The version of what the runner asks of a host's engine, the imports of
 /// module `engine` ([`engine`]): a host gives the runner the version it
@@ -124,25 +124,55 @@ pub extern "C" fn kept() -> u32 {
     KEPT as u32
 }
 
+/// The most updates a script holds ([`script_room`]), the longest session
+/// the console keeps.
+#[unsafe(no_mangle)]
+pub extern "C" fn longest() -> u32 {
+    LONGEST as u32
+}
+
 /// The words a tone is, in [`sound`]'s batches and [`hear`]'s calls.
 #[unsafe(no_mangle)]
 pub extern "C" fn words() -> u32 {
     WORDS as u32
 }
 
-/// The keys a keyboard plays the buttons by (`cartridge_run::KEYS`), at
+/// The keys one person plays the buttons by (`cartridge_run::KEYS`), at
 /// [`out`]: a line each, the key's name, a space, its button's bit.
 #[unsafe(no_mangle)]
 pub extern "C" fn keys() -> i32 {
-    let lines: Vec<String> = KEYS
+    give_keys(&KEYS)
+}
+
+/// The keys two people sharing a keyboard play the buttons by, a half each
+/// (`cartridge_run::SHARED`), at [`out`], as [`keys`] gives them.
+#[unsafe(no_mangle)]
+pub extern "C" fn shared() -> i32 {
+    give_keys(&SHARED)
+}
+
+fn give_keys(table: &[(&str, u32)]) -> i32 {
+    let lines: Vec<String> = table
         .iter()
         .map(|(key, button)| format!("{key} {button}"))
         .collect();
     Runner::with(|runner| runner.give(lines.join("\n").as_bytes()))
 }
 
+/// The pads `update`'s number carries, a byte each from its lowest.
+#[unsafe(no_mangle)]
+pub extern "C" fn pads() -> u32 {
+    cartridge::button::PADS
+}
+
+/// How far each pad's byte lies above the one before it, in bits.
+#[unsafe(no_mangle)]
+pub extern "C" fn pad_bits() -> u32 {
+    cartridge::button::PAD_BITS
+}
+
 /// The contract's buttons, at [`out`]: a line each, the button's name, a
-/// space, its bit.
+/// space, its bit in the first pad's byte.
 #[unsafe(no_mangle)]
 pub extern "C" fn buttons() -> i32 {
     let lines: Vec<String> = cartridge::button::NAMED
@@ -252,7 +282,8 @@ pub extern "C" fn text() -> i32 {
 }
 
 /// Room for `len` bytes, for the host to write what the next call reads:
-/// prepared bytes or a script. A cartridge's file goes through [`file`].
+/// prepared bytes. A cartridge's file goes through [`file`], a script's
+/// buttons through [`script_room`].
 #[unsafe(no_mangle)]
 pub extern "C" fn room(len: usize) -> *mut u8 {
     Runner::with(|runner| {
@@ -375,7 +406,8 @@ pub extern "C" fn close(id: u32) {
     Runner::with(|runner| runner.shelf.remove(id));
 }
 
-/// Holds the contract's `buttons` down on `id` from its next update on.
+/// Holds the contract's `buttons`, every pad's, down on `id` from its next
+/// update on.
 #[unsafe(no_mangle)]
 pub extern "C" fn press(id: u32, buttons: u32) {
     Runner::with(|runner| runner.shelf.press(id, buttons));
@@ -387,12 +419,31 @@ pub extern "C" fn pace(id: u32, pace: f64, now: f64) {
     Runner::with(|runner| runner.shelf.pace(id, pace, now));
 }
 
-/// Plays the buttons in the room on `id`, one an update.
+/// Room for `count` updates of buttons, a word each, the number `update`
+/// takes, for the host to write what the next [`script`] plays. Counted
+/// in words, a room holds whole numbers only, and the shelf takes them
+/// where the host wrote them: a script lies in the runner's memory once.
+/// A script past [`longest`] gets none, a null pointer, and the next
+/// [`script`] plays nothing.
+#[unsafe(no_mangle)]
+pub extern "C" fn script_room(count: usize) -> *mut u32 {
+    Runner::with(|runner| {
+        runner.script.clear();
+        if count > LONGEST {
+            return std::ptr::null_mut();
+        }
+        runner.script.resize(count, 0);
+        runner.script.as_mut_ptr()
+    })
+}
+
+/// Plays the buttons in [`script_room`] on `id`, one an update, after any
+/// script it plays.
 #[unsafe(no_mangle)]
 pub extern "C" fn script(id: u32) {
     Runner::with(|runner| {
-        let Runner { shelf, room, .. } = runner;
-        shelf.script(id, room);
+        let buttons = std::mem::take(&mut runner.script);
+        runner.shelf.script(id, buttons);
     });
 }
 
@@ -499,7 +550,7 @@ pub extern "C" fn ran(id: u32, from: u32) -> i32 {
     watched(id, |watch| {
         let ran = watch.ran().get(from as usize..).unwrap_or_default();
         ran.iter()
-            .flat_map(|ran| [u32::from(ran.buttons), ran.spent])
+            .flat_map(|ran| [ran.buttons, ran.spent])
             .flat_map(u32::to_le_bytes)
             .collect()
     })

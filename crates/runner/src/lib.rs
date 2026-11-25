@@ -111,9 +111,11 @@ impl Instance for Game {
 #[derive(Default)]
 struct Runner {
     shelf: Shelf<Game>,
-    /// What the host wrote for the next call: a file, prepared bytes or a
-    /// script's buttons.
+    /// What the host wrote for the next call: a file or prepared bytes.
     room: Vec<u8>,
+    /// The buttons the host wrote for the next [`abi::script`], a word an
+    /// update, which the shelf takes where they lie.
+    script: Vec<u32>,
     /// The size of a file past the most a file may have, whose bytes the
     /// room never took ([`abi::file`]).
     over: Option<usize>,

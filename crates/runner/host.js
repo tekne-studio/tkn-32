@@ -45,8 +45,9 @@ const decoder = new TextDecoder();
  * @typedef {{
  *   memory: WebAssembly.Memory,
  *   names(): number, contract(): number, ticks(): number, kept(): number, words(): number, keys(): number,
+ *   shared(): number, pads(): number, pad_bits(): number,
  *   width(): number, height(): number, budget(): number, block(): number,
- *   engine(): number, most(): number, text(): number, buttons(): number, tones(): number,
+ *   engine(): number, most(): number, longest(): number, text(): number, buttons(): number, tones(): number,
  *   pages(): number, table(): number, calls(): number, values(): number,
  *   room(len: number): number, file(len: number): number, name(len: number): number, out(): number,
  *   check(): number, prepare(): number,
@@ -54,7 +55,8 @@ const decoder = new TextDecoder();
  *   open_prepared(id: number, seed: number, watched: number, now: number): void,
  *   still(id: number, now: number): void, fail(id: number, now: number): void, close(id: number): void,
  *   press(id: number, buttons: number): void, pace(id: number, pace: number, now: number): void,
- *   script(id: number): void, scripted(id: number): number, step(id: number, count: number): number,
+ *   script_room(count: number): number, script(id: number): void, scripted(id: number): number,
+ *   step(id: number, count: number): number,
  *   tick(now: number): number, idle(): number, stopped(id: number): number, updates(id: number): number,
  *   shown(id: number): number, read(id: number): number, sound(id: number): number, stop(id: number): number,
  *   frames(id: number): number, ran(id: number, from: number): number, size(id: number): number,
@@ -190,16 +192,31 @@ export class Emulator {
 	/** The words a tone is: `env.tone`'s arguments. */
 	words;
 	/**
-	 * The keys a keyboard plays the buttons by, by the names a page's
-	 * keyboard events give them (`KeyboardEvent.code`), each to its button's bit.
+	 * The keys one person plays the buttons by, by the names a page's
+	 * keyboard events give them (`KeyboardEvent.code`), each to its button's
+	 * bit: the first pad's.
 	 * @type {ReadonlyMap<string, number>}
 	 */
 	keys;
 	/**
-	 * The contract's buttons, each by its name to its bit.
+	 * The keys two people sharing a keyboard play the buttons by, a half
+	 * each, as {@link Emulator#keys} names them: the left half the first
+	 * pad's, the right half the second's.
+	 * @type {ReadonlyMap<string, number>}
+	 */
+	shared;
+	/**
+	 * The contract's buttons, each by its name to its bit in the first pad's
+	 * byte.
 	 * @type {ReadonlyMap<string, number>}
 	 */
 	buttons;
+	/**
+	 * The pads the buttons' number carries, a byte each from its lowest, and
+	 * how far each pad's byte lies above the one before it, in bits.
+	 */
+	pads;
+	padBits;
 	/** A screen's pixels across and down. */
 	width;
 	height;
@@ -209,6 +226,8 @@ export class Emulator {
 	block;
 	/** The most bytes a cartridge's file may have. */
 	most;
+	/** The most updates a script holds, the longest session the console keeps. */
+	longest;
 	/**
 	 * What a host holds for a game: the calls to `env.tone` an update counts
 	 * (a host that hears a game apart from the runner hands it no more a
@@ -227,12 +246,16 @@ export class Emulator {
 		this.kept = runner.kept();
 		this.words = runner.words();
 		this.keys = this.#bits(runner.keys());
+		this.shared = this.#bits(runner.shared());
 		this.buttons = this.#bits(runner.buttons());
+		this.pads = runner.pads();
+		this.padBits = runner.pad_bits();
 		this.width = runner.width();
 		this.height = runner.height();
 		this.budget = runner.budget();
 		this.block = runner.block();
 		this.most = runner.most();
+		this.longest = runner.longest();
 		this.limits = {
 			tones: runner.tones(),
 			pages: runner.pages(),
@@ -374,7 +397,8 @@ export class Emulator {
 	}
 
 	/**
-	 * Holds the contract's `buttons` down on `id` from its next update on.
+	 * Holds the contract's `buttons`, every pad's, down on `id` from its next
+	 * update on.
 	 * @param {number} id @param {number} buttons
 	 */
 	press(id, buttons) {
@@ -390,11 +414,18 @@ export class Emulator {
 	}
 
 	/**
-	 * Plays `buttons` on `id`, a byte an update, after any script it plays.
+	 * Plays `buttons` on `id`, one an update, after any script it plays: each
+	 * the number `update` takes, every pad's buttons. A script past
+	 * {@link Emulator#longest} gets no room, and throws.
 	 * @param {number} id @param {ArrayLike<number>} buttons
 	 */
 	script(id, buttons) {
-		this.#room(buttons);
+		// Past 4 G updates, any count past the longest is refused the same.
+		const at = this.#runner.script_room(Math.min(buttons.length, 2 ** 32 - 1));
+		if (!at) throw new Error(`a script of ${buttons.length} updates, past the ${this.longest} one holds`);
+		// Read after the room is made, which may have grown the memory.
+		const words = new DataView(this.#runner.memory.buffer, at, buttons.length * 4);
+		for (let update = 0; update < buttons.length; update++) words.setUint32(update * 4, buttons[update] >>> 0, true);
 		this.#runner.script(id);
 	}
 

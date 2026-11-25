@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use cartridge::TICKS;
+use cartridge::{TICKS, button};
 
 use crate::{Cart, Instance, Tone, tones::batch};
 
@@ -28,6 +28,11 @@ pub const FASTEST: f64 = 4.0;
 /// seconds of a game at the contract's pace. A host takes them after each
 /// tick or step; one that never does keeps only the last.
 pub const KEPT: usize = 600;
+/// The most updates one script holds, the longest session the console
+/// keeps: about 19 hours at the contract's pace. A script is a session
+/// read back, and a file is hostile input: a longer one would only fill
+/// the memory of whatever holds it.
+pub const LONGEST: usize = 1 << 22;
 
 /// Carts by a name the host gives each.
 pub struct Shelf<I> {
@@ -47,7 +52,7 @@ struct Shelved<I> {
     /// The buttons of the updates to come, one an update, played in the
     /// place of the held ones until they run out or a button goes down;
     /// never empty.
-    script: Option<VecDeque<u8>>,
+    script: Option<VecDeque<u32>>,
     /// What each update played, oldest first, until taken.
     played: VecDeque<Vec<Tone>>,
 }
@@ -91,7 +96,7 @@ impl<I: Instance> Shelved<I> {
         let Some(script) = &mut self.script else {
             return (self.held | core::mem::take(&mut self.pressed), false);
         };
-        let buttons = script.pop_front().map_or(0, u32::from);
+        let buttons = script.pop_front().unwrap_or(0);
         let out = script.is_empty();
         if out {
             self.script = None;
@@ -158,8 +163,10 @@ impl<I: Instance> Shelf<I> {
     }
 
     /// Holds `buttons` down on `id`, in the place of what was held, from
-    /// its next update on. A button that goes down ends its script.
+    /// its next update on. A button that goes down ends its script; a bit
+    /// no pad has is no button, and ends none.
     pub fn press(&mut self, id: u32, buttons: u32) {
+        let buttons = buttons & button::EVERY;
         if let Some(shelved) = self.carts.get_mut(&id) {
             if buttons & !shelved.held != 0 {
                 shelved.script = None;
@@ -180,18 +187,20 @@ impl<I: Instance> Shelf<I> {
 
     /// Plays `buttons` on `id`, one an update, after any script it plays,
     /// in the place of the buttons held: its clock holds the cart at the
-    /// script's last update, and a button that goes down ends it.
-    pub fn script(&mut self, id: u32, buttons: &[u8]) {
-        if let Some(shelved) = self.carts.get_mut(&id)
-            && !buttons.is_empty()
-        {
-            if shelved.script.is_none() {
+    /// script's last update, and a button that goes down ends it. A script
+    /// that starts is the buttons as given, a `Vec`'s taken without a copy.
+    pub fn script(&mut self, id: u32, buttons: impl Into<VecDeque<u32>>) {
+        let mut buttons = buttons.into();
+        let Some(shelved) = self.carts.get_mut(&id) else {
+            return;
+        };
+        match &mut shelved.script {
+            _ if buttons.is_empty() => {}
+            Some(script) => script.append(&mut buttons),
+            None => {
                 shelved.pressed = 0;
+                shelved.script = Some(buttons);
             }
-            shelved
-                .script
-                .get_or_insert_default()
-                .extend(buttons.iter().copied());
         }
     }
 
@@ -578,8 +587,8 @@ mod tests {
         let (cart, buttons) = pressed(0);
         shelf.put(1, cart, 0.0);
         shelf.press(1, 0b1);
-        shelf.script(1, &[4, 5]);
-        shelf.script(1, &[6]);
+        shelf.script(1, [4, 5]);
+        shelf.script(1, [6]);
         assert_eq!(shelf.scripted(1), Some(3));
         shelf.press(1, 0);
         assert_eq!(shelf.scripted(1), Some(3), "a button let go goes on");
@@ -587,7 +596,7 @@ mod tests {
         assert_eq!(given(&buttons), [4, 5, 6]);
         assert_eq!(shelf.scripted(1), None);
         assert!(shelf.idle(), "held where the script ends");
-        shelf.script(1, &[]);
+        shelf.script(1, Vec::new());
         assert_eq!(shelf.scripted(1), None, "a script of nothing plays nothing");
         shelf.pace(1, 1.0, TICK_MS * 9.5);
         shelf.tick(TICK_MS * 10.5);
@@ -599,16 +608,16 @@ mod tests {
         let mut shelf = Shelf::default();
         let (cart, buttons) = pressed(0);
         shelf.put(1, cart, 0.0);
-        shelf.script(1, &[1, 1, 1, 1]);
+        shelf.script(1, [1, 1, 1, 1]);
         shelf.tick(TICK_MS * 1.5);
         shelf.press(1, 0b100);
         assert_eq!(shelf.scripted(1), None);
         shelf.tick(TICK_MS * 2.5);
         assert_eq!(given(&buttons), [1, 0b100]);
-        shelf.script(1, &[5, 6]);
+        shelf.script(1, [5, 6]);
         assert_eq!(shelf.step(1, 3), 3);
         assert_eq!(given(&buttons), [1, 0b100, 5, 6, 0b100], "then the held");
-        shelf.script(1, &[7]);
+        shelf.script(1, [7]);
         shelf.step(1, 1);
         shelf.tick(TICK_MS * 3.5);
         assert_eq!(
@@ -616,6 +625,32 @@ mod tests {
             7,
             "a script stepped out holds no clock"
         );
+    }
+
+    #[test]
+    fn the_second_pad_is_pressed_and_scripted_and_no_other_bit_arrives() {
+        use cartridge::button::{A, EVERY, LEFT, on};
+        let mut shelf = Shelf::default();
+        let (cart, buttons) = pressed(0);
+        shelf.put(1, cart, 0.0);
+        let second = on(2, A);
+        shelf.script(1, vec![second, u32::MAX]);
+        assert_eq!(shelf.step(1, 2), 2);
+        shelf.press(1, LEFT | second);
+        shelf.step(1, 1);
+        assert_eq!(given(&buttons), [second, EVERY, LEFT | second]);
+    }
+
+    #[test]
+    fn a_bit_no_pad_has_ends_no_script() {
+        let mut shelf = Shelf::default();
+        let (cart, buttons) = pressed(0);
+        shelf.put(1, cart, 0.0);
+        shelf.script(1, [4, 5]);
+        shelf.press(1, 1 << 7 | 1 << 15 | 1 << 31);
+        assert_eq!(shelf.scripted(1), Some(2), "no button went down");
+        assert_eq!(shelf.step(1, 3), 3);
+        assert_eq!(given(&buttons), [4, 5, 0], "and none is held after");
     }
 
     #[test]

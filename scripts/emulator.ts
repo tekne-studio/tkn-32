@@ -67,11 +67,14 @@ function bounded(command: string, what: string): string {
  * imports the runner asks of a host's engine, each file by its name in the
  * folder, and the numbers a host may need before it runs the runner, each
  * by the name of the runner's export that gives it: a screen's size, the
- * updates a second, the most bytes a file may have, the calls of `env.tone`
+ * updates a second, the most bytes a file may have, the most updates a
+ * script holds (`longest`), the calls of `env.tone`
  * an update counts, what a host's engine holds for a game (`pages` of its
  * memory, its `table`, the `calls` and `values` of its deepest chain), the
- * contract's buttons by their names, and the keys a keyboard plays them by,
- * each to its button's bit.
+ * contract's buttons by their names, the `pads` their number carries and
+ * how far apart (`pad_bits`), and the keys a keyboard plays them by, one
+ * person's (`keys`) and two people's sharing it (`shared`), each to its
+ * button's bit.
  */
 export interface Manifest {
 	contract: number;
@@ -85,13 +88,17 @@ export interface Manifest {
 	height: number;
 	ticks: number;
 	most: number;
+	longest: number;
 	tones: number;
 	pages: number;
 	table: number;
 	calls: number;
 	values: number;
 	buttons: Record<string, number>;
+	pads: number;
+	pad_bits: number;
 	keys: Record<string, number>;
+	shared: Record<string, number>;
 }
 
 /** The SHA-256 of `bytes`, in hex: what a file of the emulator is named by. */
@@ -270,9 +277,13 @@ export async function buildEmulator(out: string, where: Where = 'here'): Promise
 		height: emulator.height,
 		ticks: emulator.ticks,
 		most: emulator.most,
+		longest: emulator.longest,
 		...emulator.limits,
 		buttons: Object.fromEntries(emulator.buttons),
-		keys: Object.fromEntries(emulator.keys)
+		pads: emulator.pads,
+		pad_bits: emulator.padBits,
+		keys: Object.fromEntries(emulator.keys),
+		shared: Object.fromEntries(emulator.shared)
 	};
 	// The suites run this build to gather its cases, so it is whole first.
 	await Bun.write(`${out}/emulator.json`, `${JSON.stringify(manifest, null, '\t')}\n`);
@@ -314,13 +325,13 @@ const SUITES = ['hostile', 'contract'];
  * The emulator's cases, what any host is held to: every run of the hostile
  * and contract suites, on the emulator in `out`, which wasmi alone and
  * every host at hand agreed on, each with the test it came from, the cart's
- * file in hex, its seed, its buttons as runs of `[value, count]`, a byte an
- * update, and the run a host must give: the FNV-1a of every screen shown
- * after an update (its pixels, then its palette), of every tone kept (its
- * words, little end first), why it stopped (`running` while it runs), the
- * updates it ran, and the FNV-1a of its last screen in colour. A case a
- * host cannot run is a host that fails. Sorted, so the same suites give
- * the same bytes.
+ * file in hex, its seed, its buttons as runs of `[value, count]`, each the
+ * number `update` takes, and the run a host must give: the FNV-1a of every
+ * screen shown after an update (its pixels, then its palette), of every
+ * tone kept (its words, little end first), why it stopped (`running` while
+ * it runs), the updates it ran, and the FNV-1a of its last screen in
+ * colour. A case a host cannot run is a host that fails. Sorted, so the
+ * same suites give the same bytes.
  */
 async function gatherCases(out: string): Promise<Uint8Array> {
 	const folder = `${TARGET}/cases`;
