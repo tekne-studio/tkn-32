@@ -85,7 +85,10 @@
 			.then((answer) => (answer.ok ? answer.json() : []))
 			.catch(() => []);
 		const asked = new URLSearchParams(location.search);
-		bench.players = Number(asked.get('players') ?? 1);
+		// Written in the address, the people at the keyboard win over the game's
+		// count, up to it.
+		const players = asked.get('players');
+		if (players !== null) bench.players = Number(players);
 		const first = carts.find(({ name }) => name === asked.get('cart')) ?? carts[0];
 		if (first) await choose(first.name);
 	});
@@ -102,12 +105,13 @@
 		opened = name;
 	}
 
-	// The address says the cart opened and the people at the keyboard, so a
-	// reload keeps both: the players as played, so a count the console has no
-	// pads for never reaches it, and again once the console says its pads.
+	// The address says the cart opened and, when a person asked, the people at
+	// the keyboard, so a reload keeps both: the players as played, so a count
+	// past the pads the game plays never reaches it, and again once its file
+	// says them.
 	$effect(() => {
 		if (!opened) return;
-		const players = bench.players > 1 ? `&players=${bench.players}` : '';
+		const players = bench.asked ? `&players=${bench.players}` : '';
 		replaceState(`?cart=${encodeURIComponent(opened)}${players}`, {});
 	});
 
@@ -126,6 +130,7 @@
 			return;
 		}
 		chosen = '';
+		bench.players = null;
 		bench.open(await file.arrayBuffer(), file.name);
 	}
 
@@ -210,7 +215,15 @@
 <main>
 	<header>
 		<h1>Workbench</h1>
-		<select value={chosen} onchange={(event) => choose(event.currentTarget.value)} aria-label="Cartridge">
+		<select
+			value={chosen}
+			onchange={(event) => {
+				// Another game seats as many as it plays.
+				bench.players = null;
+				choose(event.currentTarget.value);
+			}}
+			aria-label="Cartridge"
+		>
 			{#if !chosen}<option value="">{bench.name || 'a file'}</option>{/if}
 			{#each carts as cart (cart.name)}
 				<option value={cart.name}>{cart.name}</option>
@@ -224,15 +237,17 @@
 			seed
 			<input type="number" bind:value={bench.seed} min="0" max="4294967295" size="10" />
 		</label>
-		<label title="Two share the keyboard, a half each">
-			players
-			<select
-				value={bench.players}
-				onchange={(event) => (bench.players = Number(event.currentTarget.value))}
-			>
-				{#each { length: bench.console?.pads ?? 1 }, at (at)}<option value={at + 1}>{at + 1}</option>{/each}
-			</select>
-		</label>
+		{#if bench.plays > 1}
+			<label title="Two share the keyboard, a half each">
+				players
+				<select
+					value={bench.players}
+					onchange={(event) => (bench.players = Number(event.currentTarget.value))}
+				>
+					{#each { length: bench.plays }, at (at)}<option value={at + 1}>{at + 1}</option>{/each}
+				</select>
+			</label>
+		{/if}
 		<button onclick={() => bench.restart()} title="R">Restart</button>
 	</header>
 

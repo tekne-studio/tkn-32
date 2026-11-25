@@ -16,6 +16,7 @@
 //! - `prepared`: bytes kept as prepared that preparing never gave
 //! - `malformed`: files that are not cartridges, whole or cut
 //! - `cover`: a cover's section that lies, read before anything runs
+//! - `pads`: the pads a file says it plays, a lie or garbage
 
 #[path = "support/mod.rs"]
 mod support;
@@ -30,6 +31,8 @@ mod imports;
 mod malformed;
 #[path = "hostile/memory.rs"]
 mod memory;
+#[path = "hostile/pads.rs"]
+mod pads;
 #[path = "hostile/pointers.rs"]
 mod pointers;
 #[path = "hostile/prepared.rs"]

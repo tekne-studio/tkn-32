@@ -1,6 +1,7 @@
 //! The cartridge built to WebAssembly and run as a runner runs it: it keeps
 //! the contract, each pad's buttons move its dot and play its tone, well
-//! within the budget, and every engine at hand shows the same frames.
+//! within the budget, every engine at hand shows the same frames, and its
+//! file says its cover and the pads it plays.
 //! `built!` builds the crate it is written in, so a copy of this cart tests
 //! itself as it is.
 
@@ -105,4 +106,10 @@ fn its_file_carries_its_cover_and_its_first_screen_is_it() {
         "the first screen is the cover"
     );
     assert_eq!(*cart.palette(), cover.palette());
+}
+
+#[test]
+fn its_file_says_it_plays_every_pad() {
+    let prepared = cartridge_run::prepare(built!()).expect("it keeps the contract");
+    assert_eq!(prepared.pads(), button::PADS);
 }

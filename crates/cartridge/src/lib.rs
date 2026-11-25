@@ -233,6 +233,10 @@ pub mod button {
         }
         every
     };
+    /// The custom section a cartridge's file says the pads it plays in,
+    /// which [`crate::pads!`] writes: one byte, 1 to [`PADS`]. A file
+    /// without it plays one, and a runner refuses one that says other.
+    pub const PADS_SECTION: &str = "cartridge.pads";
 
     /// The bits of `buttons`, named as the first pad's, as pad `pad`
     /// holds them in the number: `on(2, A)` is the second pad's A. A bit

@@ -74,7 +74,8 @@ function bounded(command: string, what: string): string {
  * contract's buttons by their names, the `pads` their number carries and
  * how far apart (`pad_bits`), and the keys a keyboard plays them by, one
  * person's (`keys`) and two people's sharing it (`shared`), each to its
- * button's bit.
+ * button's bit, and every code the check answers (`refusals`), what a host
+ * has words for.
  */
 export interface Manifest {
 	contract: number;
@@ -98,6 +99,7 @@ export interface Manifest {
 	pads: number;
 	pad_bits: number;
 	keys: Record<string, number>;
+	refusals: string[];
 	shared: Record<string, number>;
 }
 
@@ -283,7 +285,8 @@ export async function buildEmulator(out: string, where: Where = 'here'): Promise
 		pads: emulator.pads,
 		pad_bits: emulator.padBits,
 		keys: Object.fromEntries(emulator.keys),
-		shared: Object.fromEntries(emulator.shared)
+		shared: Object.fromEntries(emulator.shared),
+		refusals: [...emulator.refusals]
 	};
 	// The suites run this build to gather its cases, so it is whole first.
 	await Bun.write(`${out}/emulator.json`, `${JSON.stringify(manifest, null, '\t')}\n`);

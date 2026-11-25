@@ -62,6 +62,8 @@ export interface Seen {
 	ticked: boolean;
 	/** The file's cover, after an open alone. */
 	cover?: Covered;
+	/** The pads the file says it plays, after an open alone: 1 when it says none, or is refused. */
+	plays?: number;
 	/** The screen in colour, four bytes a pixel. */
 	rgba: ArrayBuffer;
 	/** The screen as indices into the palette, a byte a pixel. */

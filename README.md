@@ -31,6 +31,9 @@ A game exports, every value an `i32`:
   a tone whose pitch and loudness may slide.
 - **The cover:** a picture of 160 by 120, a title, a maker and a year, in a
   custom section of the file. A host shows it without running the game.
+- **The pads:** how many it plays, 1 to `button::PADS`, one byte in a custom section of
+  its own (`cartridge::pads!`). A host seats as many people without running
+  the game; a file without it plays one.
 - No clock, no random source: the seed is the game's only chance.
 
 ## The limits

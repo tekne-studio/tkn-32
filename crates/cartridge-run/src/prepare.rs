@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
 
+use cartridge::button::{PADS, PADS_SECTION};
 use cartridge::{
     BULK_BYTES, Export, FRAME_OVERHEAD, MAX_FILE, MAX_FRAME, MAX_MEMORY, MAX_STACK, MAX_TABLE,
     MEMORY, START_BUDGET, Signature, TONE, TONE_SIGNATURE,
@@ -64,11 +65,19 @@ const PAGE: u64 = 64 * 1024;
 #[derive(Clone, Debug)]
 pub struct Prepared {
     bytes: Vec<u8>,
+    pads: u32,
 }
 
 impl Prepared {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// The pads the file says it plays in its [`PADS_SECTION`], for a host
+    /// to seat as many people before it runs the game: 1 when it says
+    /// none. The section is the file's alone: the bytes keep none.
+    pub fn pads(&self) -> u32 {
+        self.pads
     }
 }
 
@@ -96,9 +105,26 @@ pub enum Refusal {
     Segment,
     /// An instruction the meter has no price for.
     Instruction(&'static str),
+    /// A [`PADS_SECTION`] that says other than one byte, 1 to [`PADS`], or
+    /// a second one.
+    Pads,
 }
 
 impl Refusal {
+    /// Every [`code`](Self::code), once each: what a host has words for.
+    pub const CODES: [&'static str; 10] = [
+        "size",
+        "invalid",
+        "import",
+        "export",
+        "memory",
+        "table",
+        "frame",
+        "segment",
+        "instruction",
+        "pads",
+    ];
+
     /// A word for why, as a host answers a file it will not keep: the
     /// sentence is [`Display`](fmt::Display)'s.
     pub const fn code(&self) -> &'static str {
@@ -112,6 +138,7 @@ impl Refusal {
             Refusal::Frame(_) => "frame",
             Refusal::Segment => "segment",
             Refusal::Instruction(_) => "instruction",
+            Refusal::Pads => "pads",
         }
     }
 }
@@ -139,6 +166,7 @@ impl fmt::Display for Refusal {
             }
             Refusal::Segment => write!(f, "a segment outside its memory or its table"),
             Refusal::Instruction(name) => write!(f, "it uses {name}"),
+            Refusal::Pads => write!(f, "its {PADS_SECTION} says other than 1 to {PADS} pads"),
         }
     }
 }
@@ -150,6 +178,7 @@ pub fn prepare(file: &[u8]) -> Result<Prepared, Refusal> {
         return Err(Refusal::TooLarge(file.len()));
     }
     let survey = survey(file)?;
+    let pads = survey.pads?;
     let types = survey.types.as_ref();
     let memory = (types.memory_count() == 1)
         .then(|| types.memory_at(0))
@@ -304,6 +333,7 @@ pub fn prepare(file: &[u8]) -> Result<Prepared, Refusal> {
     }
     Ok(Prepared {
         bytes: out.finish(),
+        pads,
     })
 }
 
@@ -373,6 +403,10 @@ struct Survey {
     /// import's frame is its parameters.
     frames: Vec<u32>,
     start: Option<u32>,
+    /// The pads its [`PADS_SECTION`] says, 1 when it has none; refused when
+    /// it says other than one byte, 1 to [`PADS`], or says it twice, once
+    /// the rest is found valid.
+    pads: Result<u32, Refusal>,
 }
 
 /// Validates `file`, each function's body measured on the way.
@@ -381,6 +415,7 @@ fn survey(file: &[u8]) -> Result<Survey, Refusal> {
     let mut allocations = FuncValidatorAllocations::default();
     let mut frames = Vec::new();
     let mut start = None;
+    let mut pads = Ok(None);
     for payload in Parser::new(0).parse_all(file) {
         let payload = payload.map_err(invalid)?;
         match validator.payload(&payload).map_err(invalid)? {
@@ -403,14 +438,24 @@ fn survey(file: &[u8]) -> Result<Survey, Refusal> {
                     types,
                     frames: all,
                     start,
+                    pads: pads.map(|said| said.unwrap_or(1)),
                 });
             }
             ValidPayload::Parser(_) => {
                 return Err(Refusal::Invalid("a module within a module".to_owned()));
             }
         }
-        if let Payload::StartSection { func, .. } = payload {
-            start = Some(func);
+        match payload {
+            Payload::StartSection { func, .. } => start = Some(func),
+            Payload::CustomSection(section) if section.name() == PADS_SECTION => {
+                pads = match (pads, section.data()) {
+                    (Ok(None), &[said]) if (1..=PADS).contains(&u32::from(said)) => {
+                        Ok(Some(u32::from(said)))
+                    }
+                    _ => Err(Refusal::Pads),
+                };
+            }
+            _ => {}
         }
     }
     Err(Refusal::Invalid("it ends early".to_owned()))
@@ -748,5 +793,42 @@ fn trap_if_spent(out: &mut Vec<u8>, meter: u32) {
 fn emit(out: &mut Vec<u8>, instructions: &[Instruction]) {
     for instruction in instructions {
         instruction.encode(out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Refusal;
+
+    #[test]
+    fn codes_name_every_refusal_once() {
+        let every = [
+            Refusal::TooLarge(0),
+            Refusal::Invalid(String::new()),
+            Refusal::Import(String::new()),
+            Refusal::Export(""),
+            Refusal::Memory,
+            Refusal::Table,
+            Refusal::Frame(0),
+            Refusal::Segment,
+            Refusal::Instruction(""),
+            Refusal::Pads,
+        ];
+        // Names every variant, so a refusal added stops here, beside `every`.
+        for refusal in &every {
+            match refusal {
+                Refusal::TooLarge(_)
+                | Refusal::Invalid(_)
+                | Refusal::Import(_)
+                | Refusal::Export(_)
+                | Refusal::Memory
+                | Refusal::Table
+                | Refusal::Frame(_)
+                | Refusal::Segment
+                | Refusal::Instruction(_)
+                | Refusal::Pads => {}
+            }
+        }
+        assert_eq!(every.map(|refusal| refusal.code()), Refusal::CODES);
     }
 }

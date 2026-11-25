@@ -55,8 +55,10 @@ export class Bench {
 	seeking = $state<number | null>(null);
 
 	#playing = $state(true);
-	/** The people asked to play at the keyboard, kept as asked until the console says its pads. */
-	#asked = $state(1);
+	/** The people a person asked to play at the keyboard, kept as asked; null to seat as many as the game plays. */
+	#asked = $state<number | null>(null);
+	/** The pads the game on the bench says it plays, as its file says them. */
+	#plays = $state(1);
 	/** Whether the page is hidden. */
 	#away = false;
 	/** Updates a second, as a share of the console's. */
@@ -102,16 +104,32 @@ export class Bench {
 	}
 
 	/**
-	 * The people at the keyboard: one plays the first pad by every key, more share it a part each. Those asked, at
-	 * most one a pad, and one until the console is ready and says how many pads it has.
+	 * The people at the keyboard: one plays the first pad by every key, more share it a part each. As many as the
+	 * game says it plays, or fewer when a person asked, and one until its file is read: a file says no more pads
+	 * than the console has.
 	 */
 	get players(): number {
-		return Math.min(this.#asked, this.console?.pads ?? 1);
+		return Math.min(this.#asked ?? this.#plays, this.#plays);
 	}
 
-	/** Another count of people at the keyboard: the keys change hands, and every button held is let go. */
-	set players(players: number) {
-		this.#asked = Math.max(1, Math.trunc(players) || 1);
+	/** The pads the game on the bench says it plays: the most people its keyboard seats. */
+	get plays(): number {
+		return this.#plays;
+	}
+
+	/** Another count of people at the keyboard, null for as many as the game plays: the keys change hands. */
+	set players(players: number | null) {
+		this.#asked = players === null ? null : Math.max(1, Math.trunc(players) || 1);
+		this.#handed();
+	}
+
+	/** Whether a person asked for the people at the keyboard, in place of the game's own count. */
+	get asked(): boolean {
+		return this.#asked !== null;
+	}
+
+	/** The keys change hands: every button held is let go. */
+	#handed() {
 		this.held = 0;
 		if (this.seeking === null) this.#ask({ press: 0 });
 	}
@@ -269,6 +287,11 @@ export class Bench {
 		this.seen = seen;
 		this.seeking = seen.seeking;
 		if (seen.cover) this.cover = seen.cover;
+		if (seen.plays !== undefined && seen.plays !== this.#plays) {
+			const before = this.players;
+			this.#plays = seen.plays;
+			if (this.players !== before) this.#handed();
+		}
 		if (seen.ran.length) {
 			this.#recorded.push(...seen.ran.map(({ buttons }) => buttons));
 			this.spent = [...this.spent, ...seen.ran.map(({ spent }) => spent)].slice(-KEPT);

@@ -9,7 +9,7 @@ use cartridge::cover::{FIXED_BYTES, MAX_TEXT, SECTION, VERSION};
 use cartridge::{COLOURS, MAX_FILE};
 use cartridge_run::{cover, prepare};
 
-use crate::support::{assert_runs, cart};
+use crate::support::{assert_runs, cart, custom};
 
 /// A cover's section by hand, as `cartridge-build` writes one.
 fn section(title: &[u8], maker: &[u8]) -> Vec<u8> {
@@ -23,30 +23,6 @@ fn section(title: &[u8], maker: &[u8]) -> Vec<u8> {
     }
     out.extend((0..cartridge::cover::PICTURE_BYTES).map(|i| i as u8));
     out
-}
-
-/// `data` as a custom section named `name`.
-fn custom(name: &str, data: &[u8]) -> Vec<u8> {
-    let mut body = leb(name.len());
-    body.extend_from_slice(name.as_bytes());
-    body.extend_from_slice(data);
-    let mut out = vec![0];
-    out.extend(leb(body.len()));
-    out.extend(body);
-    out
-}
-
-fn leb(mut n: usize) -> Vec<u8> {
-    let mut out = Vec::new();
-    loop {
-        let byte = (n & 0x7f) as u8;
-        n >>= 7;
-        if n == 0 {
-            out.push(byte);
-            return out;
-        }
-        out.push(byte | 0x80);
-    }
 }
 
 /// A cartridge that keeps the contract, with nothing on its screen.

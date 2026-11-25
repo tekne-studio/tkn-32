@@ -47,9 +47,10 @@ const decoder = new TextDecoder();
  *   names(): number, contract(): number, ticks(): number, kept(): number, words(): number, keys(): number,
  *   shared(): number, pads(): number, pad_bits(): number,
  *   width(): number, height(): number, budget(): number, block(): number,
- *   engine(): number, most(): number, longest(): number, text(): number, buttons(): number, tones(): number,
+ *   engine(): number, most(): number, longest(): number, text(): number, buttons(): number, refusals(): number,
+ *   tones(): number,
  *   pages(): number, table(): number, calls(): number, values(): number,
- *   room(len: number): number, file(len: number): number, name(len: number): number, out(): number,
+ *   room(len: number): number, file(len: number): number, plays(): number, name(len: number): number, out(): number,
  *   check(): number, prepare(): number,
  *   open(id: number, seed: number, watched: number, now: number): void,
  *   open_prepared(id: number, seed: number, watched: number, now: number): void,
@@ -229,6 +230,12 @@ export class Emulator {
 	/** The most updates a script holds, the longest session the console keeps. */
 	longest;
 	/**
+	 * Every code {@link Emulator#check} answers, once each: what a host has
+	 * words for.
+	 * @type {readonly string[]}
+	 */
+	refusals;
+	/**
 	 * What a host holds for a game: the calls to `env.tone` an update counts
 	 * (a host that hears a game apart from the runner hands it no more a
 	 * call), and what its engine holds, at the least and at the most, the
@@ -256,6 +263,7 @@ export class Emulator {
 		this.block = runner.block();
 		this.most = runner.most();
 		this.longest = runner.longest();
+		this.refusals = /** @type {string} */ (this.#text(runner.refusals())).split('\n');
 		this.limits = {
 			tones: runner.tones(),
 			pages: runner.pages(),
@@ -328,6 +336,19 @@ export class Emulator {
 	#numbers(len) {
 		const out = this.#out(len);
 		return out && new Uint32Array(out.buffer);
+	}
+
+	/**
+	 * The pads `file` plays, for a host to seat as many people before it
+	 * runs it: 1 when it says none; null when {@link Emulator#check}
+	 * refuses the file, which it judges as `check` does, in the same one
+	 * pass.
+	 * @param {ArrayLike<number>} file
+	 */
+	plays(file) {
+		this.#file(file);
+		const pads = this.#runner.plays();
+		return pads < 0 ? null : pads;
 	}
 
 	/**

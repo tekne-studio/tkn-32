@@ -102,8 +102,8 @@ function post(emulator: Emulator, ticked = false, silent = false) {
 }
 
 /**
- * Opens `file` watched, as a cabinet shows it first: its cover read too. A
- * file is named by the SHA-256 of its bytes.
+ * Opens `file` watched, as a cabinet shows it first: its cover and the pads
+ * it plays read too. A file is named by the SHA-256 of its bytes.
  */
 async function open(emulator: Emulator, data: Extract<Asked, { open: ArrayBuffer }>) {
 	const file = new Uint8Array(data.open);
@@ -118,8 +118,9 @@ async function open(emulator: Emulator, data: Extract<Asked, { open: ArrayBuffer
 	if (data.script) emulator.script(ID, data.script);
 	emulator.pace(ID, seeking === null ? data.pace : 0, now);
 	const cover = emulator.cover(file, name);
+	const plays = emulator.plays(file) ?? 1;
 	const [answer, transfer] = seen(emulator, false, true);
-	scope.postMessage({ ...answer, cover }, [...transfer, cover.rgba.buffer]);
+	scope.postMessage({ ...answer, cover, plays }, [...transfer, cover.rgba.buffer]);
 }
 
 /**

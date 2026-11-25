@@ -1,8 +1,8 @@
 // The host's own calls, past what a page asks: a file too large, a window
 // past the end, a step of every update there is, prepared bytes that
 // preparing never gave, a script of every pad's buttons, a script too
-// long. Each answers, and
-// the emulator runs on. It runs the console's build of the emulator (`bun
+// long, the codes its check answers, the pads a file plays. Each answers,
+// and the emulator runs on. It runs the console's build of the emulator (`bun
 // scripts/emulator.ts`, which `bun scripts/check.ts` runs first) on bun's
 // WebAssembly.
 import { describe, expect, test } from 'bun:test';
@@ -102,6 +102,27 @@ describe('the host', () => {
 			const ran = emulator.ran(6, 0);
 			expect([ran[0], ran[2], ran[4]]).toEqual([second, every, a | second]);
 		});
+	});
+
+	test('names every code its check answers, once each', () => {
+		const { cases }: { cases: string } = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+		const checked: { check: string }[] = JSON.parse(readFileSync(`${EMULATOR}/${cases}`, 'utf8'));
+		const answered = new Set([emulator.check(unread(emulator.most + 1)), ...checked.map(({ check }) => check)]);
+		answered.delete('');
+		expect(new Set(emulator.refusals).size).toBe(emulator.refusals.length);
+		expect(emulator.refusals).toEqual(expect.arrayContaining([...answered]));
+	});
+
+	test('seats the pads a file it keeps says, and nobody at a file it refuses', () => {
+		const said = (pads: number) => [0, 16, 14, ...new TextEncoder().encode('cartridge.pads'), pads];
+		expect(emulator.plays(dot)).toBe(1);
+		expect(emulator.plays([...dot, ...said(emulator.pads)])).toBe(emulator.pads);
+		expect(emulator.plays([...dot, ...said(emulator.pads + 1)])).toBeNull();
+		// A module of nothing but the section: refused, no memory its own, whatever it says.
+		const bare = [0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0, ...said(2)];
+		expect(emulator.check(bare)).toBe('memory');
+		expect(emulator.plays(bare)).toBeNull();
+		expect(emulator.plays(unread(emulator.most + 1))).toBeNull();
 	});
 
 	test('stops prepared bytes preparing never gave as a failed load, alone', () => {

@@ -32,6 +32,30 @@ pub fn cart(update: &str, more: &str, memory: u32) -> Vec<u8> {
     .expect("the test's cartridge is valid text")
 }
 
+/// `data` as a custom section named `name`.
+pub fn custom(name: &str, data: &[u8]) -> Vec<u8> {
+    let mut body = leb(name.len());
+    body.extend_from_slice(name.as_bytes());
+    body.extend_from_slice(data);
+    let mut out = vec![0];
+    out.extend(leb(body.len()));
+    out.extend(body);
+    out
+}
+
+fn leb(mut n: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let byte = (n & 0x7f) as u8;
+        n >>= 7;
+        if n == 0 {
+            out.push(byte);
+            return out;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
 /// Asserts `file` stops as `stop`, after `after` updates, on every engine.
 pub fn assert_stops(file: &[u8], stop: Stop, after: u64) {
     let buttons = vec![0; after as usize + 2];

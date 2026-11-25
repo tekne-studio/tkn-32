@@ -168,6 +168,40 @@ macro_rules! cart {
     };
 }
 
+/// Says in the file how many pads the game plays, 1 to
+/// [`button::PADS`](crate::button::PADS), in its custom section
+/// [`button::PADS_SECTION`](crate::button::PADS_SECTION): a host reads it
+/// without running the game, to seat as many people. A game without it
+/// plays one; another count stops the build. Its static takes a name of
+/// its own, so a game imports the contract's names beside it.
+///
+/// ```
+/// use cartridge::button::{PADS, PADS_SECTION};
+///
+/// cartridge::pads!(PADS);
+/// # fn main() { assert_eq!(PADS_SECTION, "cartridge.pads") }
+/// ```
+#[macro_export]
+macro_rules! pads {
+    ($pads:expr) => {
+        const _: () = assert!(
+            1 <= $pads && $pads <= $crate::button::PADS,
+            "a game plays 1 to cartridge::button::PADS pads"
+        );
+
+        // The section's name is `cartridge::button::PADS_SECTION`: an
+        // attribute takes a literal. On wasm32 rustc writes the static's
+        // bytes as the custom section whether or not anything reads it.
+        #[cfg_attr(
+            target_arch = "wasm32",
+            allow(unsafe_code),
+            unsafe(link_section = "cartridge.pads")
+        )]
+        #[allow(dead_code)]
+        static PADS_PLAYED: [u8; 1] = [$pads as u8];
+    };
+}
+
 /// Places the cover `cartridge_build::cover` wrote for this crate twice: in
 /// the file's `cartridge` custom section, which a host reads without
 /// running the game, and in the game's data as `COVER`, a

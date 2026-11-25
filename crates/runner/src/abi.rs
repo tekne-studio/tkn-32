@@ -182,6 +182,13 @@ pub extern "C" fn buttons() -> i32 {
     Runner::with(|runner| runner.give(lines.join("\n").as_bytes()))
 }
 
+/// Every code [`check`] answers (`cartridge_run::Refusal::CODES`), at
+/// [`out`], a line each: what a host has words for.
+#[unsafe(no_mangle)]
+pub extern "C" fn refusals() -> i32 {
+    Runner::with(|runner| runner.give(cartridge_run::Refusal::CODES.join("\n").as_bytes()))
+}
+
 /// A screen's pixels across.
 #[unsafe(no_mangle)]
 pub extern "C" fn width() -> u32 {
@@ -338,6 +345,18 @@ pub extern "C" fn check() -> i32 {
         let refused = runner.file().and_then(cartridge_run::prepare).err();
         let code = refused.as_ref().map(cartridge_run::Refusal::code);
         runner.give(code.unwrap_or_default().as_bytes())
+    })
+}
+
+/// The pads the file in the room plays (`cartridge_run::Prepared::pads`),
+/// for a host to seat as many people before it runs it: 1 when it says
+/// none; -1 when [`check`] refuses the file, which it judges as [`check`]
+/// does, in the same one pass.
+#[unsafe(no_mangle)]
+pub extern "C" fn plays() -> i32 {
+    Runner::with(|runner| {
+        let prepared = runner.file().and_then(cartridge_run::prepare);
+        prepared.map_or(-1, |prepared| prepared.pads() as i32)
     })
 }
 

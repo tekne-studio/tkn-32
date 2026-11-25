@@ -11,6 +11,8 @@ use cartridge::{Buttons, Game, HEIGHT, Palette, Screen, WIDTH, tone, wave};
 cartridge::cart!(Dot);
 // cover.png, made the file's cover by build.rs, and `COVER` to draw it.
 cartridge::cover!();
+// A dot each pad: a host seats as many people as the console has pads.
+cartridge::pads!(PADS);
 
 /// The dot's side in pixels.
 const SIDE: i32 = 4;
