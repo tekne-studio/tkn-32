@@ -33,8 +33,18 @@ export interface Console {
 	budget: number;
 	/** The bytes a block of memory's map stands for. */
 	block: number;
-	/** Each key, by its `KeyboardEvent.code`, and its button's bit. */
+	/** Each key one person plays by, by its `KeyboardEvent.code`, and its button's bit: the first pad's. */
 	keys: [string, number][];
+	/** Each key two people sharing the keyboard play by, a half each, and its button's bit in either pad. */
+	shared: [string, number][];
+	/** Each button by its name, in the order of its bit in the first pad's byte. */
+	buttons: [string, number][];
+	/** The pads the buttons' number carries, a byte each from its lowest. */
+	pads: number;
+	/** How far each pad's byte lies above the one before it, in bits. */
+	padBits: number;
+	/** The most updates a script holds, the longest session the console keeps. */
+	longest: number;
 }
 
 /**

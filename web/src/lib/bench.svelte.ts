@@ -47,7 +47,7 @@ export class Bench {
 	at = $state(0);
 	/** The bytes the memory panel shows. */
 	readonly shown = 512;
-	/** The buttons the keys hold now. */
+	/** The buttons the keys hold now, every pad's. */
 	held = $state(0);
 	/** Buttons being played back, one an update from the start, until a key takes over. */
 	replay = $state.raw<number[] | null>(null);
@@ -55,6 +55,8 @@ export class Bench {
 	seeking = $state<number | null>(null);
 
 	#playing = $state(true);
+	/** The people asked to play at the keyboard, kept as asked until the console says its pads. */
+	#asked = $state(1);
 	/** Whether the page is hidden. */
 	#away = false;
 	/** Updates a second, as a share of the console's. */
@@ -97,6 +99,26 @@ export class Bench {
 		this.#ask({ pace: this.#pace() });
 		if (away) this.sound.hold();
 		else this.sound.resume();
+	}
+
+	/**
+	 * The people at the keyboard: one plays the first pad by every key, more share it a part each. Those asked, at
+	 * most one a pad, and one until the console is ready and says how many pads it has.
+	 */
+	get players(): number {
+		return Math.min(this.#asked, this.console?.pads ?? 1);
+	}
+
+	/** Another count of people at the keyboard: the keys change hands, and every button held is let go. */
+	set players(players: number) {
+		this.#asked = Math.max(1, Math.trunc(players) || 1);
+		this.held = 0;
+		if (this.seeking === null) this.#ask({ press: 0 });
+	}
+
+	/** The keys the people at the keyboard play by, each to its button's bit. */
+	get keys(): [string, number][] {
+		return (this.players > 1 ? this.console?.shared : this.console?.keys) ?? [];
 	}
 
 	get speed(): number {
@@ -217,7 +239,7 @@ export class Bench {
 	}
 
 	#button(code: string): number {
-		return this.console?.keys.find(([key]) => key === code)?.[1] ?? 0;
+		return this.keys.find(([key]) => key === code)?.[1] ?? 0;
 	}
 
 	#tick() {

@@ -14,7 +14,8 @@
 	import { Bench } from '$lib/bench.svelte';
 	import type { Region } from '$lib/bench';
 	import { Sound } from '$lib/sound.svelte';
-	import { read, write } from '$lib/session';
+	import { read, write, type Layout } from '$lib/session';
+	import { keysOf } from '$lib/keys';
 
 	/** A cart the page serves, as `bun run workbench` lists them. */
 	interface Listed {
@@ -24,10 +25,9 @@
 	}
 
 	const SPEEDS = [0.25, 0.5, 1, 2, 4];
-	const BUTTONS = ['←', '→', '↑', '↓', 'A', 'B', 'START'];
-	const ARROWS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
-	/** How a key's name reads in the hint: `KeyZ` as Z, both shifts as Shift. */
-	const said = (code: string) => ARROWS[code] ?? code.replace(/^(Key|Numpad)/, '').replace(/(.)(Left|Right)$/, '$1');
+	const ARROWS: Record<string, string> = { left: '←', right: '→', up: '↑', down: '↓' };
+	/** How a button's name reads on the page: the stick's as arrows, the others in capitals. */
+	const label = (name: string) => ARROWS[name] ?? name.toUpperCase();
 
 	const sound = new Sound();
 	const bench = new Bench(sound);
@@ -36,16 +36,21 @@
 	if (import.meta.env.DEV) Object.assign(globalThis, { bench });
 	let carts: Listed[] = $state([]);
 	let chosen = $state('');
+	/** The cart of the list last opened, for the address. */
+	let opened = $state('');
 	let scale = $state(4);
 	let pointed: { x: number; y: number; index: number } | null = $state(null);
 	let seen = $derived(bench.seen);
-	/** The keys of each button, as the console's table names them. */
-	let keys = $derived(
-		BUTTONS.map((name, bit) => {
-			const named = (bench.console?.keys ?? []).filter(([, button]) => button === 1 << bit).map(([code]) => said(code));
-			return `${name}: ${[...new Set(named)].join(' or ')}`;
-		}).join(' · ')
-	);
+	/** Each pad played at the keyboard: its buttons by their bits in the number, and the keys of each. */
+	let pads = $derived.by(() => {
+		if (!bench.console) return [];
+		const { buttons: named, padBits } = bench.console;
+		return Array.from({ length: bench.players }, (_, pad) => {
+			const buttons = named.map(([name, bit]) => ({ label: label(name), bit: (bit << (pad * padBits)) >>> 0 }));
+			const keys = buttons.map(({ label, bit }) => `${label}: ${keysOf(bench.keys, bit)}`);
+			return { buttons, keys: keys.join(' · ') };
+		});
+	});
 	/** The running cart as `bun run cart` takes it: a file opened goes by its name. */
 	let called = $derived(carts.find(({ name }) => name === bench.name)?.called ?? (bench.name || 'rocks'));
 	/** How the last build went, when it failed: the compiler's words. */
@@ -79,8 +84,9 @@
 		carts = await fetch('/carts/carts.json')
 			.then((answer) => (answer.ok ? answer.json() : []))
 			.catch(() => []);
-		const asked = new URLSearchParams(location.search).get('cart');
-		const first = carts.find(({ name }) => name === asked) ?? carts[0];
+		const asked = new URLSearchParams(location.search);
+		bench.players = Number(asked.get('players') ?? 1);
+		const first = carts.find(({ name }) => name === asked.get('cart')) ?? carts[0];
 		if (first) await choose(first.name);
 	});
 	onDestroy(() => {
@@ -93,8 +99,17 @@
 		const answer = await fetch(`/carts/${encodeURIComponent(name)}.wasm`);
 		if (!answer.ok) return;
 		bench.open(await answer.arrayBuffer(), name, await regions(name));
-		replaceState(`?cart=${encodeURIComponent(name)}`, {});
+		opened = name;
 	}
+
+	// The address says the cart opened and the people at the keyboard, so a
+	// reload keeps both: the players as played, so a count the console has no
+	// pads for never reaches it, and again once the console says its pads.
+	$effect(() => {
+		if (!opened) return;
+		const players = bench.players > 1 ? `&players=${bench.players}` : '';
+		replaceState(`?cart=${encodeURIComponent(opened)}${players}`, {});
+	});
 
 	/** What lies where in a built cart's memory; nothing when its build made no map. */
 	async function regions(name: string): Promise<Region[]> {
@@ -114,12 +129,18 @@
 		bench.open(await file.arrayBuffer(), file.name);
 	}
 
+	/** The console's buttons and pads, as a session names them; it is ready before any game runs. */
+	function layout(): Layout {
+		if (!bench.console) throw new Error('the emulator has not started');
+		return bench.console;
+	}
+
 	/** Saves the game played so far as a session file. */
 	function save() {
 		const session = bench.session();
 		const name = `${session.cart.replace(/\.wasm$/, '')}-seed${session.seed}-${session.buttons.length}.txt`;
 		const link = document.createElement('a');
-		link.href = URL.createObjectURL(new Blob([write(session, name)], { type: 'text/plain' }));
+		link.href = URL.createObjectURL(new Blob([write(session, name, layout())], { type: 'text/plain' }));
 		link.download = name;
 		link.click();
 		URL.revokeObjectURL(link.href);
@@ -130,7 +151,7 @@
 		if (!file) return;
 		unread = '';
 		try {
-			const session = read(await file.text());
+			const session = read(await file.text(), layout());
 			if (session.cart && session.cart !== chosen && carts.some(({ name }) => name === session.cart)) {
 				await choose(session.cart);
 			}
@@ -203,6 +224,15 @@
 			seed
 			<input type="number" bind:value={bench.seed} min="0" max="4294967295" size="10" />
 		</label>
+		<label title="Two share the keyboard, a half each">
+			players
+			<select
+				value={bench.players}
+				onchange={(event) => (bench.players = Number(event.currentTarget.value))}
+			>
+				{#each { length: bench.console?.pads ?? 1 }, at (at)}<option value={at + 1}>{at + 1}</option>{/each}
+			</select>
+		</label>
 		<button onclick={() => bench.restart()} title="R">Restart</button>
 	</header>
 
@@ -247,12 +277,16 @@
 					</button>
 					<span class="updates">update {seen?.updates ?? 0}</span>
 				</div>
-				<div class="buttons" aria-label="Buttons held">
-					{#each BUTTONS as name, bit (name)}
-						<span class:held={(bench.held >> bit) & 1}>{name}</span>
-					{/each}
-					<span class="keys">{keys} · P pause · . step · R restart · M sound</span>
-				</div>
+				{#each pads as pad, at (at)}
+					<div class="buttons" aria-label="Pad {at + 1}'s buttons held">
+						{#if pads.length > 1}<span class="pad">pad {at + 1}</span>{/if}
+						{#each pad.buttons as { label, bit } (bit)}
+							<span class:held={bench.held & bit}>{label}</span>
+						{/each}
+						<span class="keys">{pad.keys}</span>
+					</div>
+				{/each}
+				<div class="buttons"><span class="keys">P pause · . step · R restart · M sound</span></div>
 				{#if seen?.stop}<p class="stop">Stopped: {seen.stop}</p>{/if}
 				{#if bench.console && bench.broken}<p class="stop">{bench.broken}</p>{/if}
 			</Panel>
@@ -384,6 +418,9 @@
 	}
 	.buttons span.held {
 		color: var(--accent);
+	}
+	.buttons .pad {
+		color: var(--dim);
 	}
 	.buttons .keys {
 		margin-left: auto;

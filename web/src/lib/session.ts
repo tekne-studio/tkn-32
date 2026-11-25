@@ -4,16 +4,18 @@
  * again, exactly. It is kept as the script `bun run cart --buttons @FILE`
  * reads, `UPDATE:NAMES` items, each held from that update (counted from 0)
  * to the next item's, the names joined by `+`, `-` for none, `#` a comment
- * to the line's end. What the workbench adds rides in comments.
+ * to the line's end. A name is the first pad's; a later pad's takes its
+ * number, counted from 1, before it (`2.a`). What the workbench adds rides
+ * in comments. The names and the pads are the console's, as its emulator
+ * gives them.
  */
+import type { Console } from './bench';
 
-/** The buttons by name, a bit each in the contract's order. */
-const NAMES = ['left', 'right', 'up', 'down', 'a', 'b', 'start'];
 /**
- * The most updates a session read holds, some hours of play: a file is
- * hostile input, and a longer one would only fill the page's memory.
+ * The buttons as the console names them, how many pads hold them and how far apart, and the most updates a session
+ * holds, the longest script its runner plays: a file is hostile input.
  */
-export const LONGEST = 1 << 22;
+export type Layout = Pick<Console, 'buttons' | 'pads' | 'padBits' | 'longest'>;
 
 export interface Session {
 	cart: string;
@@ -24,14 +26,18 @@ export interface Session {
 	hash?: string;
 }
 
-/** The names of the buttons in `held`, or `-` for none. */
-function names(held: number): string {
-	const named = NAMES.filter((_, bit) => (held >> bit) & 1);
-	return named.length ? named.join('+') : '-';
+/** Each button of every pad by its name in a script, and its bit in the number. */
+function named({ buttons, pads, padBits }: Layout): [string, number][] {
+	return Array.from({ length: pads }, (_, pad) =>
+		buttons.map(([name, bit]): [string, number] => [pad ? `${pad + 1}.${name}` : name, (bit << (pad * padBits)) >>> 0])
+	).flat();
 }
 
 /** The session as a script, with its cart, seed, length and hash in comments. */
-export function write(session: Session, file: string): string {
+export function write(session: Session, file: string, layout: Layout): string {
+	const every = named(layout);
+	/** The names of the buttons in `held`, or `-` for none. */
+	const names = (held: number) => every.filter(([, bit]) => held & bit).map(([name]) => name).join('+') || '-';
 	const { cart, seed, buttons, hash } = session;
 	const lines = [
 		`# workbench session: ${cart}, seed ${seed}, ${buttons.length} updates`,
@@ -58,7 +64,8 @@ export function write(session: Session, file: string): string {
  * comment's, or the last item's update and one), and what the comments say.
  * Throws with the item it could not read.
  */
-export function read(text: string): Partial<Session> & { buttons: number[] } {
+export function read(text: string, layout: Layout): Partial<Session> & { buttons: number[] } {
+	const every = new Map(named(layout));
 	const said = (key: string) => new RegExp(`^#\\s*${key}\\s+(\\S+)`, 'm').exec(text)?.[1];
 	const items: [number, number][] = [];
 	for (const line of text.split('\n')) {
@@ -68,9 +75,9 @@ export function read(text: string): Partial<Session> & { buttons: number[] } {
 			if (!Number.isInteger(update) || update < 0 || held === undefined) throw new Error(`${item}: wants UPDATE:NAMES`);
 			let bits = 0;
 			for (const name of held.split('+').filter((name) => name !== '-')) {
-				const bit = NAMES.indexOf(name);
-				if (bit < 0) throw new Error(`${item}: no button ${name}`);
-				bits |= 1 << bit;
+				const bit = every.get(name);
+				if (bit === undefined) throw new Error(`${item}: no button ${name}`);
+				bits = (bits | bit) >>> 0;
 			}
 			if (items.length && update < items[items.length - 1][0]) throw new Error(`${item}: the updates go in order`);
 			items.push([update, bits]);
@@ -78,7 +85,7 @@ export function read(text: string): Partial<Session> & { buttons: number[] } {
 	}
 	const kept = Number(said('updates'));
 	const updates = Number.isInteger(kept) && kept >= 0 ? kept : items.length ? items[items.length - 1][0] + 1 : 0;
-	if (updates > LONGEST) throw new Error(`${updates} updates: a session is at most ${LONGEST}`);
+	if (updates > layout.longest) throw new Error(`${updates} updates: a session is at most ${layout.longest}`);
 	const buttons: number[] = [];
 	let at = 0;
 	for (let update = 0; update < updates; update++) {

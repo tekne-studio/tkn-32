@@ -9,7 +9,7 @@
  * update never shares the page's frame.
  */
 import type { Emulator } from '../../../crates/runner/host.js';
-import type { Asked, Seen, Told } from './bench';
+import type { Asked, Console, Seen, Told } from './bench';
 
 type Host = typeof import('../../../crates/runner/host.js');
 
@@ -164,8 +164,10 @@ function failed(error: unknown) {
  * and nothing asked after it may be answered before it.
  */
 const loaded = load();
-let queue: Promise<unknown> = loaded.then(({ width, height, ticks, budget, block, keys }) => {
-	scope.postMessage({ ready: { width, height, ticks, budget, block, keys: [...keys] } });
+let queue: Promise<unknown> = loaded.then((emulator) => {
+	const { width, height, ticks, budget, block, keys, shared, buttons, pads, padBits, longest } = emulator;
+	const ready: Console = { width, height, ticks, budget, block, keys: [...keys], shared: [...shared], buttons: [...buttons], pads, padBits, longest };
+	scope.postMessage({ ready });
 }, failed);
 scope.onmessage = ({ data }) => {
 	queue = queue.then(() => loaded.then((emulator) => answer(emulator, data))).catch(failed);
