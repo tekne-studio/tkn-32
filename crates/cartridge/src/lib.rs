@@ -16,7 +16,7 @@
 //! |---|---|---|
 //! | `cart_abi` | `() -> i32` | the contract's version, [`ABI`] |
 //! | `init` | `(seed: i32)` | called once, before any update |
-//! | `update` | `(buttons: i32)` | called [`TICKS`] times a second, with the [`button`]s held |
+//! | `update` | `(buttons: i32)` | called [`TICKS`] times a second, with the [`button`]s every pad holds, a byte a pad |
 //! | `frame` | `() -> i32` | the address of the screen: [`WIDTH`] by [`HEIGHT`] bytes, row by row from the top left, each an index into the palette (its low five bits) |
 //! | `palette` | `() -> i32` | the address of [`COLOURS`] colours, four bytes each: red, green, blue, alpha |
 //! | `memory` | memory | its own memory, not imported |
@@ -204,7 +204,11 @@ pub const TONE_SIGNATURE: Signature = Signature {
     results: 0,
 };
 
-/// The buttons, one bit each in the number `update` takes.
+/// The buttons, one bit each in the number `update` takes, a byte a pad
+/// from its lowest: the first pad's in bits 0 to 6, the second's in bits 8
+/// to 14, in the same order. The pads count from 1, as people count them.
+/// Each name is the first pad's bit, and any pad's once
+/// [`Buttons::pad`](crate::Buttons::pad) reads that pad.
 pub mod button {
     pub const LEFT: u32 = 1 << 0;
     pub const RIGHT: u32 = 1 << 1;
@@ -213,8 +217,43 @@ pub mod button {
     pub const A: u32 = 1 << 4;
     pub const B: u32 = 1 << 5;
     pub const START: u32 = 1 << 6;
-    /// Every button the contract names; a runner sends no other bit.
+    /// Every button of one pad.
     pub const ALL: u32 = (1 << 7) - 1;
+    /// The pads the number carries.
+    pub const PADS: u32 = 2;
+    /// How far each pad's byte lies above the one before it: pad `n`
+    /// holds its buttons `(n - 1) * PAD_BITS` bits up.
+    pub const PAD_BITS: u32 = 8;
+    /// Every button of every pad: a runner sends no other bit.
+    pub const EVERY: u32 = {
+        let (mut every, mut pad) = (0, 1);
+        while pad <= PADS {
+            every |= on(pad, ALL);
+            pad += 1;
+        }
+        every
+    };
+
+    /// The bits of `buttons`, named as the first pad's, as pad `pad`
+    /// holds them in the number: `on(2, A)` is the second pad's A. A bit
+    /// past a pad's seven is dropped, so no pad reaches the next one's
+    /// byte. None for a pad outside 1 to [`PADS`].
+    pub const fn on(pad: u32, buttons: u32) -> u32 {
+        match shift(pad) {
+            Some(shift) => (buttons & ALL) << shift,
+            None => 0,
+        }
+    }
+
+    /// How far up the number pad `pad`'s byte lies; none for a pad
+    /// outside 1 to [`PADS`].
+    pub(crate) const fn shift(pad: u32) -> Option<u32> {
+        match pad {
+            1..=PADS => Some((pad - 1) * PAD_BITS),
+            _ => None,
+        }
+    }
+
     /// Each button by its name, in the order of its bit.
     pub const NAMED: [(&str, u32); 7] = [
         ("left", LEFT),
@@ -237,17 +276,37 @@ pub mod wave {
     pub const COUNT: u32 = 4;
 }
 
-/// The buttons held during one update.
+/// The buttons every pad holds during one update, the whole number. The
+/// [`button`] names are the first pad's bits, so `held` with a name reads
+/// the first pad: `buttons.held(button::A)` is the first pad's A,
+/// `buttons.pad(2).held(button::A)` the second's. [`Buttons::any`],
+/// [`Buttons::pressed_since`], `==` and `.0` see every pad: a game that
+/// means one pad reads it through [`Buttons::pad`] first.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Buttons(pub u32);
 
 impl Buttons {
+    /// The buttons pad `n` holds, 1 the first, where the first pad's lie,
+    /// so every method and name reads them. None for a pad outside 1 to
+    /// [`button::PADS`]: a game for two plays on with one.
+    pub const fn pad(self, n: u32) -> Buttons {
+        match button::shift(n) {
+            Some(shift) => Buttons((self.0 >> shift) & button::ALL),
+            None => Buttons(0),
+        }
+    }
+
+    /// Whether any button of any pad is held: what a cover waits for.
+    pub const fn any(self) -> bool {
+        self.0 & button::EVERY != 0
+    }
+
     /// Whether every button of `mask` is held.
     pub fn held(self, mask: u32) -> bool {
         self.0 & mask == mask
     }
 
-    /// The buttons held now that were not held `before`.
+    /// The buttons held now that were not held `before`, of every pad.
     pub fn pressed_since(self, before: Buttons) -> Buttons {
         Buttons(self.0 & !before.0)
     }
@@ -261,4 +320,50 @@ pub trait Game: Send + Sized {
     fn update(&mut self, buttons: Buttons, screen: &mut Screen);
     /// The colours the screen's indices name, read after each update.
     fn palette(&self) -> Palette;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Buttons;
+    use super::button::{self, A, ALL, B, EVERY, LEFT, PAD_BITS, PADS, START, on};
+
+    #[test]
+    fn each_pad_holds_a_byte_of_the_number_from_its_lowest() {
+        assert_eq!((PADS, PAD_BITS), (2, 8));
+        assert_eq!(EVERY, 0x7f7f, "bits 0 to 6 and 8 to 14");
+        assert_eq!(on(1, A), A);
+        assert_eq!(on(2, A | START), 0x5000);
+        assert_eq!(on(2, 0xff), on(2, ALL), "a bit no button names is dropped");
+        assert_eq!(on(0, A), 0, "the pads count from 1");
+        assert_eq!(on(PADS + 1, A), 0, "no pad past the count");
+    }
+
+    #[test]
+    fn a_pad_reads_as_the_first_and_the_plain_methods_mean_the_first() {
+        let both = Buttons(LEFT | A | on(2, B | START));
+        assert!(both.held(LEFT | A));
+        assert!(!both.held(B), "the second pad's B is not the first's");
+        assert_eq!(both.pad(1), Buttons(LEFT | A));
+        assert_eq!(both.pad(2), Buttons(B | START));
+        assert!(both.pad(2).held(button::B | button::START));
+        assert_eq!(both.pad(0), Buttons(0), "the pads count from 1");
+        assert_eq!(
+            both.pad(PADS + 1),
+            Buttons(0),
+            "a pad past the count holds none"
+        );
+        let before = Buttons(on(2, B));
+        assert_eq!(both.pressed_since(before).pad(2), Buttons(START));
+        assert!(Buttons(on(2, START)).any(), "any pad's button is one");
+        assert!(!Buttons(0).any());
+        assert!(
+            !Buttons(1 << 7 | 1 << 15).any(),
+            "a bit no button names is none"
+        );
+        assert_eq!(
+            Buttons(u32::MAX).pad(2),
+            Buttons(ALL),
+            "a pad is its seven bits"
+        );
+    }
 }
